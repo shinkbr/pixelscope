@@ -1,4 +1,5 @@
 import type { DecodedImage } from "../types";
+import { readExifMetadata } from "./exif";
 
 const MAX_PIXELS = 24_000_000;
 
@@ -104,6 +105,13 @@ export async function decodeImageFile(file: File): Promise<DecodedImage> {
   }
 
   let imageData: ImageData;
+  let exif: DecodedImage["exif"] = null;
+
+  try {
+    exif = await readExifMetadata(file);
+  } catch {
+    exif = null;
+  }
 
   try {
     imageData = await decodeWithImageBitmap(file);
@@ -118,5 +126,6 @@ export async function decodeImageFile(file: File): Promise<DecodedImage> {
     width: imageData.width,
     height: imageData.height,
     imageData,
+    exif,
   };
 }

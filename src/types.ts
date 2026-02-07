@@ -3,6 +3,19 @@ export type ExtractionScanOrder = "row-major" | "column-major";
 export type ExtractionChannelOrder = "rgba" | "bgra" | "argb" | "abgr";
 export type ExtractionBitOrder = "lsb-to-msb" | "msb-to-lsb";
 export type ExtractionBytePackOrder = "msb-first" | "lsb-first";
+export type ExifGroup = "ifd0" | "exif" | "gps" | "interop" | "ifd1";
+
+export interface ExifEntry {
+  group: ExifGroup;
+  tagId: number;
+  tagName: string;
+  value: string;
+}
+
+export interface ExifMetadata {
+  source: "exifr";
+  entries: ExifEntry[];
+}
 
 export interface BitExtractionOptions {
   scanOrder: ExtractionScanOrder;
@@ -18,6 +31,7 @@ export interface DecodedImage {
   width: number;
   height: number;
   imageData: ImageData;
+  exif: ExifMetadata | null;
 }
 
 export interface PlaneSpec {

@@ -3,6 +3,7 @@ import type { ChangeEvent, DragEvent } from "react";
 import type {
   BitExtractionOptions,
   DecodedImage,
+  ExifGroup,
   ExtractionBitOrder,
   ExtractionBytePackOrder,
   ExtractionChannelOrder,
@@ -46,6 +47,29 @@ const BYTE_PACK_OPTIONS: Array<{ value: ExtractionBytePackOrder; label: string }
   { value: "lsb-first", label: "Byte LSB first" },
 ];
 
+type AnalyzerTab = "bit-planes" | "exif";
+
+const ANALYZER_TABS: Array<{ id: AnalyzerTab; label: string }> = [
+  { id: "bit-planes", label: "Bit-Plane Navigator" },
+  { id: "exif", label: "Exif" },
+];
+
+const EXIF_GROUP_ORDER: ExifGroup[] = ["ifd0", "exif", "gps", "interop", "ifd1"];
+const EXIF_GROUP_LABELS: Record<ExifGroup, string> = {
+  ifd0: "Image (IFD0)",
+  exif: "Exif SubIFD",
+  gps: "GPS",
+  interop: "Interop",
+  ifd1: "Thumbnail (IFD1)",
+};
+
+function getExifSourceLabel(source: NonNullable<DecodedImage["exif"]>["source"]): string {
+  if (source === "exifr") {
+    return "exifr";
+  }
+  return source;
+}
+
 function buildExtractionDownloadName(
   sourceFileName: string,
   selectedPlanes: PlaneSpec[],
@@ -65,6 +89,7 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<AnalyzerTab>("bit-planes");
 
   const planeCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const planeStripRef = useRef<HTMLDivElement | null>(null);
@@ -108,10 +133,22 @@ function App() {
     };
   }, [decoded, extractionOptions, selectedPlanes]);
 
+  const exifGroups = useMemo(() => {
+    if (!decoded?.exif?.entries.length) {
+      return [];
+    }
+
+    return EXIF_GROUP_ORDER.map((group) => ({
+      group,
+      entries: decoded.exif?.entries.filter((entry) => entry.group === group) ?? [],
+    })).filter((group) => group.entries.length > 0);
+  }, [decoded]);
+
   const resetState = useCallback(() => {
     setDecoded(null);
     setSelectedPlaneIds([PLANE_SPECS[0].id]);
     setActivePlaneId(PLANE_SPECS[0].id);
+    setActiveTab("bit-planes");
     setError(null);
   }, []);
 
@@ -125,12 +162,14 @@ function App() {
         setDecoded(result);
         setSelectedPlaneIds([PLANE_SPECS[0].id]);
         setActivePlaneId(PLANE_SPECS[0].id);
+        setActiveTab("bit-planes");
       } catch (loadError) {
         const message = loadError instanceof Error ? loadError.message : "Unable to process this image.";
         setError(message);
         setDecoded(null);
         setSelectedPlaneIds([PLANE_SPECS[0].id]);
         setActivePlaneId(PLANE_SPECS[0].id);
+        setActiveTab("bit-planes");
       } finally {
         setIsLoading(false);
       }
@@ -198,7 +237,9 @@ function App() {
     }
 
     const extracted = extractBitPlaneStream(decoded.imageData, selectedPlanes, extractionOptions, Number.MAX_SAFE_INTEGER);
-    const blob = new Blob([extracted.bytes], { type: "application/octet-stream" });
+    const payload = new Uint8Array(extracted.bytes.byteLength);
+    payload.set(extracted.bytes);
+    const blob = new Blob([payload], { type: "application/octet-stream" });
     const objectUrl = URL.createObjectURL(blob);
 
     try {
@@ -335,239 +376,323 @@ function App() {
         <section className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</section>
       ) : null}
 
-      <section className="rounded-2xl border border-clay bg-white/95 p-5 shadow-panel">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-ink">Bit-Plane Navigator</h2>
-            <p className="text-xs text-ink/70">
-              One row per color channel. Click any bit buttons to toggle multi-selection and combine planes.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="rounded-lg border border-clay px-3 py-2 text-sm font-medium text-ink transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-45"
-              onClick={() => movePlane(-1)}
-              disabled={!decoded}
-            >
-              Prev
-            </button>
-            <button
-              type="button"
-              className="rounded-lg border border-clay px-3 py-2 text-sm font-medium text-ink transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-45"
-              onClick={() => movePlane(1)}
-              disabled={!decoded}
-            >
-              Next
-            </button>
-            <button
-              type="button"
-              className="rounded-lg border border-clay px-3 py-2 text-sm font-medium text-ink transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-45"
-              onClick={resetPlaneSelection}
-              disabled={!decoded}
-            >
-              Reset
-            </button>
-          </div>
-        </div>
-
-        <div ref={planeStripRef} className="space-y-3">
-          {CHANNEL_ROWS.map((channelLabel) => {
+      <section className="overflow-hidden rounded-2xl border border-clay bg-white/95 shadow-panel">
+        <div className="flex flex-wrap gap-2 border-b border-clay/80 px-4 py-3">
+          {ANALYZER_TABS.map((tab) => {
+            const isActive = activeTab === tab.id;
             return (
-              <div key={channelLabel} className="grid gap-2 md:grid-cols-[5.75rem_1fr] md:items-center">
-                <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink/65">{channelLabel}</p>
-                <div className="flex flex-wrap gap-2">
-                  {PLANE_SPECS.filter((plane) => plane.channelLabel === channelLabel).map((plane) => {
-                    const isSelected = selectedPlaneSet.has(plane.id);
-                    const isActive = plane.id === activePlaneId;
-
-                    return (
-                      <button
-                        key={plane.id}
-                        type="button"
-                        data-plane-id={plane.id}
-                        title={plane.label}
-                        onClick={() => togglePlaneSelection(plane.id)}
-                        disabled={!decoded}
-                        className={`min-w-10 rounded-full border px-3 py-2 text-xs font-medium transition ${
-                          isSelected
-                            ? "border-accent bg-accent text-white"
-                            : "border-clay text-ink hover:border-accent hover:text-accent"
-                        } ${isActive ? "ring-2 ring-accent/25 ring-offset-1" : ""} disabled:cursor-not-allowed disabled:opacity-45`}
-                      >
-                        {plane.bitPosition}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                aria-selected={isActive}
+                className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  isActive
+                    ? "border-accent bg-accent text-white"
+                    : "border-clay text-ink hover:border-accent hover:text-accent"
+                }`}
+              >
+                {tab.label}
+              </button>
             );
           })}
         </div>
-      </section>
 
-      <section className="grid gap-5 pb-2 lg:grid-cols-2">
-        <article className="rounded-2xl border border-clay bg-white/95 p-4 shadow-panel">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-base font-semibold text-ink">Selected Plane</h3>
-            <span className="rounded-full bg-accentSoft px-3 py-1 font-mono text-xs uppercase tracking-wider text-accent">
-              {selectionLabel}
-            </span>
-          </div>
-          <p className="mb-2 text-xs text-ink/70">
-            {selectedPlanes.length === 0
-              ? "No bit-planes selected."
-              : selectedPlanes.length === 1
-                ? selectedPlanes[0].bitPosition === 1
-                  ? "Least-significant bit plane."
-                  : selectedPlanes[0].bitPosition === 8
-                    ? "Most-significant bit plane."
-                    : "Intermediate bit plane."
-                : "Combined view uses logical OR across selected planes."}
-          </p>
-          {selectedPlanes.length > 1 ? (
-            <p className="mb-3 text-xs text-ink/60">{selectedPlanes.map((plane) => plane.label).join(", ")}</p>
-          ) : (
-            <p className="mb-3 text-xs text-ink/60">Preview is rendered at native pixel resolution (no CSS downsampling).</p>
-          )}
-          <div className="overflow-auto rounded-xl border border-clay bg-white p-2">
-            {decoded ? (
-              <canvas
-                ref={planeCanvasRef}
-                className="pixelated block rounded-md bg-black/5"
-                aria-label={
-                  selectedPlanes.length > 1
-                    ? "Visualized combined bit planes"
-                    : selectedPlanes.length === 1
-                      ? `Visualized ${selectedPlanes[0].label} bit plane`
-                      : "No bit plane selected"
-                }
-              />
-            ) : (
-              <div className="grid h-40 place-items-center text-sm text-ink/60">Upload an image to render bit-planes.</div>
-            )}
-          </div>
-        </article>
+        <div className="p-4 md:p-5">
+          {activeTab === "bit-planes" ? (
+            <div className="space-y-5">
+              <section className="rounded-2xl border border-clay bg-white/95 p-5 shadow-panel">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-ink">Bit-Plane Navigator</h2>
+                    <p className="text-xs text-ink/70">
+                      One row per color channel. Click any bit buttons to toggle multi-selection and combine planes.
+                    </p>
+                  </div>
 
-        <article className="rounded-2xl border border-clay bg-white/95 p-4 shadow-panel">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-base font-semibold text-ink">Hex Dump</h3>
-            <button
-              type="button"
-              onClick={downloadHexDumpData}
-              disabled={!decoded || selectedPlanes.length === 0}
-              className="rounded-lg border border-clay px-3 py-2 text-xs font-medium text-ink transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              Download
-            </button>
-          </div>
-          <div className="mb-3 grid gap-2 sm:grid-cols-2">
-            <label className="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-[0.08em] text-ink/65">
-              <span>Scan Order</span>
-              <select
-                value={extractionOptions.scanOrder}
-                onChange={(event) =>
-                  setExtractionOptions((current) => ({
-                    ...current,
-                    scanOrder: event.target.value as ExtractionScanOrder,
-                  }))
-                }
-                disabled={!decoded}
-                className="rounded-md border border-clay bg-white px-2 py-1 text-[11px] normal-case tracking-normal text-ink disabled:opacity-50"
-              >
-                {SCAN_ORDER_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="rounded-lg border border-clay px-3 py-2 text-sm font-medium text-ink transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-45"
+                      onClick={() => movePlane(-1)}
+                      disabled={!decoded}
+                    >
+                      Prev
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-clay px-3 py-2 text-sm font-medium text-ink transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-45"
+                      onClick={() => movePlane(1)}
+                      disabled={!decoded}
+                    >
+                      Next
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-clay px-3 py-2 text-sm font-medium text-ink transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-45"
+                      onClick={resetPlaneSelection}
+                      disabled={!decoded}
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
 
-            <label className="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-[0.08em] text-ink/65">
-              <span>Channel Order</span>
-              <select
-                value={extractionOptions.channelOrder}
-                onChange={(event) =>
-                  setExtractionOptions((current) => ({
-                    ...current,
-                    channelOrder: event.target.value as ExtractionChannelOrder,
-                  }))
-                }
-                disabled={!decoded}
-                className="rounded-md border border-clay bg-white px-2 py-1 text-[11px] normal-case tracking-normal text-ink disabled:opacity-50"
-              >
-                {CHANNEL_ORDER_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <div ref={planeStripRef} className="space-y-3">
+                  {CHANNEL_ROWS.map((channelLabel) => {
+                    return (
+                      <div key={channelLabel} className="grid gap-2 md:grid-cols-[5.75rem_1fr] md:items-center">
+                        <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink/65">{channelLabel}</p>
+                        <div className="flex flex-wrap gap-2">
+                          {PLANE_SPECS.filter((plane) => plane.channelLabel === channelLabel).map((plane) => {
+                            const isSelected = selectedPlaneSet.has(plane.id);
+                            const isActive = plane.id === activePlaneId;
 
-            <label className="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-[0.08em] text-ink/65">
-              <span>Bit Order</span>
-              <select
-                value={extractionOptions.bitOrder}
-                onChange={(event) =>
-                  setExtractionOptions((current) => ({
-                    ...current,
-                    bitOrder: event.target.value as ExtractionBitOrder,
-                  }))
-                }
-                disabled={!decoded}
-                className="rounded-md border border-clay bg-white px-2 py-1 text-[11px] normal-case tracking-normal text-ink disabled:opacity-50"
-              >
-                {BIT_ORDER_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                            return (
+                              <button
+                                key={plane.id}
+                                type="button"
+                                data-plane-id={plane.id}
+                                title={plane.label}
+                                onClick={() => togglePlaneSelection(plane.id)}
+                                disabled={!decoded}
+                                className={`min-w-10 rounded-full border px-3 py-2 text-xs font-medium transition ${
+                                  isSelected
+                                    ? "border-accent bg-accent text-white"
+                                    : "border-clay text-ink hover:border-accent hover:text-accent"
+                                } ${isActive ? "ring-2 ring-accent/25 ring-offset-1" : ""} disabled:cursor-not-allowed disabled:opacity-45`}
+                              >
+                                {plane.bitPosition}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
 
-            <label className="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-[0.08em] text-ink/65">
-              <span>Byte Packing</span>
-              <select
-                value={extractionOptions.bytePackOrder}
-                onChange={(event) =>
-                  setExtractionOptions((current) => ({
-                    ...current,
-                    bytePackOrder: event.target.value as ExtractionBytePackOrder,
-                  }))
-                }
-                disabled={!decoded}
-                className="rounded-md border border-clay bg-white px-2 py-1 text-[11px] normal-case tracking-normal text-ink disabled:opacity-50"
-              >
-                {BYTE_PACK_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          {hexDumpView ? (
-            <div className="mb-3 grid grid-cols-2 gap-2 text-xs text-ink/70">
-              <p>Total bits: {hexDumpView.totalBits.toLocaleString()}</p>
-              <p className="text-right">Total bytes: {hexDumpView.totalBytes.toLocaleString()}</p>
-              <p>Bits per pixel: {hexDumpView.bitsPerPixel.toLocaleString()}</p>
-              <p className="text-right">{hexDumpView.isTruncated ? "Truncated preview" : "Full dump"}</p>
-              <p>Shown bytes: {hexDumpView.shownBytes.toLocaleString()}</p>
+              <section className="grid gap-5 pb-2 lg:grid-cols-2">
+                <article className="rounded-2xl border border-clay bg-white/95 p-4 shadow-panel">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h3 className="text-base font-semibold text-ink">Selected Plane</h3>
+                    <span className="rounded-full bg-accentSoft px-3 py-1 font-mono text-xs uppercase tracking-wider text-accent">
+                      {selectionLabel}
+                    </span>
+                  </div>
+                  <p className="mb-2 text-xs text-ink/70">
+                    {selectedPlanes.length === 0
+                      ? "No bit-planes selected."
+                      : selectedPlanes.length === 1
+                        ? selectedPlanes[0].bitPosition === 1
+                          ? "Least-significant bit plane."
+                          : selectedPlanes[0].bitPosition === 8
+                            ? "Most-significant bit plane."
+                            : "Intermediate bit plane."
+                        : "Combined view uses logical OR across selected planes."}
+                  </p>
+                  {selectedPlanes.length > 1 ? (
+                    <p className="mb-3 text-xs text-ink/60">{selectedPlanes.map((plane) => plane.label).join(", ")}</p>
+                  ) : (
+                    <p className="mb-3 text-xs text-ink/60">
+                      Preview is rendered at native pixel resolution (no CSS downsampling).
+                    </p>
+                  )}
+                  <div className="overflow-auto rounded-xl border border-clay bg-white p-2">
+                    {decoded ? (
+                      <canvas
+                        ref={planeCanvasRef}
+                        className="pixelated block rounded-md bg-black/5"
+                        aria-label={
+                          selectedPlanes.length > 1
+                            ? "Visualized combined bit planes"
+                            : selectedPlanes.length === 1
+                              ? `Visualized ${selectedPlanes[0].label} bit plane`
+                              : "No bit plane selected"
+                        }
+                      />
+                    ) : (
+                      <div className="grid h-40 place-items-center text-sm text-ink/60">
+                        Upload an image to render bit-planes.
+                      </div>
+                    )}
+                  </div>
+                </article>
+
+                <article className="rounded-2xl border border-clay bg-white/95 p-4 shadow-panel">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h3 className="text-base font-semibold text-ink">Hex Dump</h3>
+                    <button
+                      type="button"
+                      onClick={downloadHexDumpData}
+                      disabled={!decoded || selectedPlanes.length === 0}
+                      className="rounded-lg border border-clay px-3 py-2 text-xs font-medium text-ink transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      Download
+                    </button>
+                  </div>
+                  <div className="mb-3 grid gap-2 sm:grid-cols-2">
+                    <label className="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-[0.08em] text-ink/65">
+                      <span>Scan Order</span>
+                      <select
+                        value={extractionOptions.scanOrder}
+                        onChange={(event) =>
+                          setExtractionOptions((current) => ({
+                            ...current,
+                            scanOrder: event.target.value as ExtractionScanOrder,
+                          }))
+                        }
+                        disabled={!decoded}
+                        className="rounded-md border border-clay bg-white px-2 py-1 text-[11px] normal-case tracking-normal text-ink disabled:opacity-50"
+                      >
+                        {SCAN_ORDER_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-[0.08em] text-ink/65">
+                      <span>Channel Order</span>
+                      <select
+                        value={extractionOptions.channelOrder}
+                        onChange={(event) =>
+                          setExtractionOptions((current) => ({
+                            ...current,
+                            channelOrder: event.target.value as ExtractionChannelOrder,
+                          }))
+                        }
+                        disabled={!decoded}
+                        className="rounded-md border border-clay bg-white px-2 py-1 text-[11px] normal-case tracking-normal text-ink disabled:opacity-50"
+                      >
+                        {CHANNEL_ORDER_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-[0.08em] text-ink/65">
+                      <span>Bit Order</span>
+                      <select
+                        value={extractionOptions.bitOrder}
+                        onChange={(event) =>
+                          setExtractionOptions((current) => ({
+                            ...current,
+                            bitOrder: event.target.value as ExtractionBitOrder,
+                          }))
+                        }
+                        disabled={!decoded}
+                        className="rounded-md border border-clay bg-white px-2 py-1 text-[11px] normal-case tracking-normal text-ink disabled:opacity-50"
+                      >
+                        {BIT_ORDER_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-[0.08em] text-ink/65">
+                      <span>Byte Packing</span>
+                      <select
+                        value={extractionOptions.bytePackOrder}
+                        onChange={(event) =>
+                          setExtractionOptions((current) => ({
+                            ...current,
+                            bytePackOrder: event.target.value as ExtractionBytePackOrder,
+                          }))
+                        }
+                        disabled={!decoded}
+                        className="rounded-md border border-clay bg-white px-2 py-1 text-[11px] normal-case tracking-normal text-ink disabled:opacity-50"
+                      >
+                        {BYTE_PACK_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  {hexDumpView ? (
+                    <div className="mb-3 grid grid-cols-2 gap-2 text-xs text-ink/70">
+                      <p>Total bits: {hexDumpView.totalBits.toLocaleString()}</p>
+                      <p className="text-right">Total bytes: {hexDumpView.totalBytes.toLocaleString()}</p>
+                      <p>Bits per pixel: {hexDumpView.bitsPerPixel.toLocaleString()}</p>
+                      <p className="text-right">{hexDumpView.isTruncated ? "Truncated preview" : "Full dump"}</p>
+                      <p>Shown bytes: {hexDumpView.shownBytes.toLocaleString()}</p>
+                    </div>
+                  ) : null}
+                  <div className="overflow-auto rounded-xl border border-clay bg-white p-2">
+                    {hexDumpView && hexDumpView.shownBytes > 0 ? (
+                      <pre className="font-mono text-[11px] leading-relaxed text-ink/90">{hexDumpView.text}</pre>
+                    ) : decoded ? (
+                      <div className="grid h-40 place-items-center text-sm text-ink/60">
+                        No bit plane selected. Select one or more planes to view the hex dump.
+                      </div>
+                    ) : (
+                      <div className="grid h-40 place-items-center text-sm text-ink/60">
+                        Upload an image to inspect hex data.
+                      </div>
+                    )}
+                  </div>
+                </article>
+              </section>
             </div>
-          ) : null}
-          <div className="overflow-auto rounded-xl border border-clay bg-white p-2">
-            {hexDumpView && hexDumpView.shownBytes > 0 ? (
-              <pre className="font-mono text-[11px] leading-relaxed text-ink/90">{hexDumpView.text}</pre>
-            ) : decoded ? (
-              <div className="grid h-40 place-items-center text-sm text-ink/60">
-                No bit plane selected. Select one or more planes to view the hex dump.
+          ) : (
+            <section className="rounded-2xl border border-clay bg-white/95 p-5 shadow-panel">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold text-ink">Exif Metadata</h2>
+                {decoded?.exif ? (
+                  <span className="rounded-full bg-accentSoft px-3 py-1 font-mono text-xs uppercase tracking-wider text-accent">
+                    {getExifSourceLabel(decoded.exif.source)}
+                  </span>
+                ) : null}
               </div>
-            ) : (
-              <div className="grid h-40 place-items-center text-sm text-ink/60">Upload an image to inspect hex data.</div>
-            )}
-          </div>
-        </article>
+
+              {!decoded ? (
+                <div className="grid h-48 place-items-center rounded-xl border border-clay bg-white text-sm text-ink/60">
+                  Upload an image to inspect Exif metadata.
+                </div>
+              ) : !decoded.exif || decoded.exif.entries.length === 0 ? (
+                <div className="grid h-48 place-items-center rounded-xl border border-clay bg-white text-sm text-ink/60">
+                  No Exif metadata found in this image.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {exifGroups.map((group) => (
+                    <article key={group.group} className="overflow-hidden rounded-xl border border-clay bg-white">
+                      <header className="border-b border-clay/80 bg-paper/60 px-4 py-2">
+                        <h3 className="font-mono text-xs uppercase tracking-[0.16em] text-ink/75">
+                          {EXIF_GROUP_LABELS[group.group]}
+                        </h3>
+                      </header>
+                      <dl className="divide-y divide-clay/40">
+                        {group.entries.map((entry, entryIndex) => (
+                          <div
+                            key={`${group.group}-${entry.tagId}-${entryIndex}`}
+                            className="grid gap-1 px-4 py-2 sm:grid-cols-[16rem_1fr] sm:items-start"
+                          >
+                            <dt className="font-mono text-[11px] uppercase tracking-[0.08em] text-ink/65">
+                              {entry.tagName}
+                              <span className="ml-2 normal-case tracking-normal text-ink/45">
+                                0x{entry.tagId.toString(16).toUpperCase().padStart(4, "0")}
+                              </span>
+                            </dt>
+                            <dd className="break-words text-sm text-ink">{entry.value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+        </div>
       </section>
     </main>
   );

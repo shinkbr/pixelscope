@@ -1,6 +1,5 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-import { extractBitPlane, extractBitPlaneStream, extractCombinedBitPlanes } from "../src/utils/bitPlane.ts";
+import { expect, test } from "vitest";
+import { buildPlaneSpecs, extractBitPlane, extractBitPlaneStream, extractCombinedBitPlanes } from "../src/utils/bitPlane.ts";
 import type { BitExtractionOptions, PlaneSpec } from "../src/types";
 
 const DEFAULT_OPTIONS: BitExtractionOptions = {
@@ -58,10 +57,10 @@ test("extractBitPlaneStream uses row-major scan by default", () => {
 
   const out = extractBitPlaneStream(img, [red1], DEFAULT_OPTIONS, 1);
 
-  assert.equal(out.bitsPerPixel, 1);
-  assert.equal(out.totalBits, 4);
-  assert.equal(out.totalBytes, 1);
-  assert.equal(out.bytes[0], 0b1010_0000);
+  expect(out.bitsPerPixel).toBe(1);
+  expect(out.totalBits).toBe(4);
+  expect(out.totalBytes).toBe(1);
+  expect(out.bytes[0]).toBe(0b1010_0000);
 });
 
 test("extractBitPlaneStream supports column-major scan order", () => {
@@ -83,7 +82,7 @@ test("extractBitPlaneStream supports column-major scan order", () => {
     1,
   );
 
-  assert.equal(out.bytes[0], 0b1100_0000);
+  expect(out.bytes[0]).toBe(0b1100_0000);
 });
 
 test("extractBitPlaneStream respects selected channel order", () => {
@@ -113,8 +112,8 @@ test("extractBitPlaneStream respects selected channel order", () => {
     1,
   );
 
-  assert.equal(rgba.bytes[0], 0b1001_0000);
-  assert.equal(bgra.bytes[0], 0b0110_0000);
+  expect(rgba.bytes[0]).toBe(0b1001_0000);
+  expect(bgra.bytes[0]).toBe(0b0110_0000);
 });
 
 test("extractBitPlaneStream respects selected bit order", () => {
@@ -144,8 +143,8 @@ test("extractBitPlaneStream respects selected bit order", () => {
     1,
   );
 
-  assert.equal(lsbToMsb.bytes[0], 0b1001_0000);
-  assert.equal(msbToLsb.bytes[0], 0b0110_0000);
+  expect(lsbToMsb.bytes[0]).toBe(0b1001_0000);
+  expect(msbToLsb.bytes[0]).toBe(0b0110_0000);
 });
 
 test("extractBitPlaneStream supports byte packing direction", () => {
@@ -175,8 +174,8 @@ test("extractBitPlaneStream supports byte packing direction", () => {
     1,
   );
 
-  assert.equal(msbFirst.bytes[0], 0b1010_0000);
-  assert.equal(lsbFirst.bytes[0], 0b0000_0101);
+  expect(msbFirst.bytes[0]).toBe(0b1010_0000);
+  expect(lsbFirst.bytes[0]).toBe(0b0000_0101);
 });
 
 test("extractBitPlane returns binary monochrome output", () => {
@@ -188,7 +187,7 @@ test("extractBitPlane returns binary monochrome output", () => {
 
   const out = extractBitPlane(img, red1);
 
-  assert.deepEqual(Array.from(out.data), [
+  expect(Array.from(out.data)).toEqual([
     255, 255, 255, 255,
     0, 0, 0, 255,
   ]);
@@ -204,8 +203,88 @@ test("extractCombinedBitPlanes uses logical OR across selected planes", () => {
 
   const out = extractCombinedBitPlanes(img, [red1, green1]);
 
-  assert.deepEqual(Array.from(out.data), [
+  expect(Array.from(out.data)).toEqual([
     255, 255, 255, 255,
     255, 255, 255, 255,
   ]);
+});
+
+test("buildPlaneSpecs returns all channel and bit combinations", () => {
+  const specs = buildPlaneSpecs();
+
+  expect(specs).toHaveLength(32);
+  expect(specs[0]?.id).toBe("r-1");
+  expect(specs[0]?.bitMask).toBe(1);
+  expect(specs[31]?.id).toBe("a-8");
+  expect(specs[31]?.bitMask).toBe(128);
+});
+
+test("extractCombinedBitPlanes returns opaque black when no planes are selected", () => {
+  const img = imageData(2, 1, [
+    12, 34, 56, 78,
+    90, 91, 92, 93,
+  ]);
+
+  const out = extractCombinedBitPlanes(img, []);
+
+  expect(Array.from(out.data)).toEqual([
+    0, 0, 0, 255,
+    0, 0, 0, 255,
+  ]);
+});
+
+test("extractCombinedBitPlanes writes black when selected bits are unset", () => {
+  const red1 = plane(0, 1, "r-1");
+  const img = imageData(1, 1, [0, 12, 13, 200]);
+
+  const out = extractCombinedBitPlanes(img, [red1]);
+
+  expect(Array.from(out.data)).toEqual([0, 0, 0, 255]);
+});
+
+test("extractBitPlaneStream returns metadata when no planes are selected", () => {
+  const img = imageData(2, 1, [
+    1, 0, 0, 255,
+    0, 0, 0, 255,
+  ]);
+
+  const out = extractBitPlaneStream(img, [], DEFAULT_OPTIONS, 99);
+
+  expect(out.bitsPerPixel).toBe(0);
+  expect(out.totalBits).toBe(0);
+  expect(out.totalBytes).toBe(0);
+  expect(out.bytes.length).toBe(0);
+});
+
+test("extractBitPlaneStream returns empty packed bytes when maxBytes is 0", () => {
+  const red1 = plane(0, 1, "r-1");
+  const img = imageData(2, 1, [
+    1, 0, 0, 255,
+    1, 0, 0, 255,
+  ]);
+
+  const out = extractBitPlaneStream(img, [red1], DEFAULT_OPTIONS, 0);
+
+  expect(out.bitsPerPixel).toBe(1);
+  expect(out.totalBits).toBe(2);
+  expect(out.totalBytes).toBe(1);
+  expect(out.bytes.length).toBe(0);
+});
+
+test("extractBitPlaneStream stops within a pixel when byte budget is reached", () => {
+  const red1 = plane(0, 1, "r-1");
+  const green1 = plane(1, 1, "g-1");
+  const blue1 = plane(2, 1, "b-1");
+  const img = imageData(3, 1, [
+    1, 0, 1, 255,
+    0, 1, 0, 255,
+    1, 1, 1, 255,
+  ]);
+
+  const out = extractBitPlaneStream(img, [red1, green1, blue1], DEFAULT_OPTIONS, 1);
+
+  expect(out.bitsPerPixel).toBe(3);
+  expect(out.totalBits).toBe(9);
+  expect(out.totalBytes).toBe(2);
+  expect(Array.from(out.bytes)).toEqual([0b1010_1011]);
 });

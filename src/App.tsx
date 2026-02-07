@@ -300,10 +300,11 @@ function App() {
                 ? "Most-significant bit plane."
                 : "Intermediate bit plane."}
           </p>
+          <p className="mb-3 text-xs text-ink/60">Preview is rendered at native pixel resolution (no CSS downsampling).</p>
           <div className="overflow-auto rounded-xl border border-clay bg-white p-2">
             <canvas
               ref={planeCanvasRef}
-              className="pixelated mx-auto max-h-[60vh] max-w-full rounded-md bg-black/5"
+              className="pixelated block rounded-md bg-black/5"
               aria-label={`Visualized ${selectedPlane.label} bit plane`}
             />
             {!decoded ? (

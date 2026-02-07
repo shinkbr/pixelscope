@@ -62,7 +62,18 @@ async function decodeWithImageBitmap(file: File): Promise<ImageData> {
     throw new Error("createImageBitmap is not available.");
   }
 
-  const bitmap = await createImageBitmap(file);
+  const bitmap = await (async () => {
+    try {
+      // Prefer no implicit orientation/color conversion for stego analysis.
+      return await createImageBitmap(file, {
+        imageOrientation: "none",
+        premultiplyAlpha: "none",
+        colorSpaceConversion: "none",
+      });
+    } catch {
+      return createImageBitmap(file);
+    }
+  })();
 
   try {
     return readFromCanvas((ctx) => {

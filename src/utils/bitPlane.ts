@@ -35,10 +35,12 @@ export function buildPlaneSpecs(): PlaneSpec[] {
 export function extractBitPlane(imageData: ImageData, plane: PlaneSpec): ImageData {
   const source = imageData.data;
   const output = new Uint8ClampedArray(source.length);
+  const shift = plane.bitPosition - 1;
 
   for (let index = 0; index < source.length; index += 4) {
-    const planeBitIsSet = (source[index + plane.channelOffset] & plane.bitMask) !== 0;
-    const value = planeBitIsSet ? 255 : 0;
+    const channelValue = source[index + plane.channelOffset];
+    const isolatedBit = (channelValue >> shift) & 0b1;
+    const value = isolatedBit === 1 ? 255 : 0;
 
     output[index] = value;
     output[index + 1] = value;

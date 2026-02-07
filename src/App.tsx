@@ -1,49 +1,119 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
-import type { DecodedImage } from "./types";
-import { buildPlaneSpecs, extractBitPlane } from "./utils/bitPlane";
+import type {
+  BitExtractionOptions,
+  DecodedImage,
+  ExtractionBitOrder,
+  ExtractionBytePackOrder,
+  ExtractionChannelOrder,
+  ExtractionScanOrder,
+  PlaneSpec,
+} from "./types";
+import { buildPlaneSpecs, extractBitPlane, extractBitPlaneStream, extractCombinedBitPlanes } from "./utils/bitPlane";
 import { formatBytes } from "./utils/format";
+import { buildHexDump } from "./utils/hexDump";
 import { decodeImageFile } from "./utils/image";
 
 const PLANE_SPECS = buildPlaneSpecs();
+const CHANNEL_ROWS: PlaneSpec["channelLabel"][] = ["Red", "Green", "Blue", "Alpha"];
+const HEX_DUMP_MAX_BYTES = 8192;
+const DEFAULT_EXTRACTION_OPTIONS: BitExtractionOptions = {
+  scanOrder: "row-major",
+  channelOrder: "rgba",
+  bitOrder: "lsb-to-msb",
+  bytePackOrder: "msb-first",
+};
+
+const SCAN_ORDER_OPTIONS: Array<{ value: ExtractionScanOrder; label: string }> = [
+  { value: "row-major", label: "Horizontal (row-major)" },
+  { value: "column-major", label: "Vertical (column-major)" },
+];
+
+const CHANNEL_ORDER_OPTIONS: Array<{ value: ExtractionChannelOrder; label: string }> = [
+  { value: "rgba", label: "RGBA" },
+  { value: "bgra", label: "BGRA" },
+  { value: "argb", label: "ARGB" },
+  { value: "abgr", label: "ABGR" },
+];
+
+const BIT_ORDER_OPTIONS: Array<{ value: ExtractionBitOrder; label: string }> = [
+  { value: "lsb-to-msb", label: "LSB -> MSB (1..8)" },
+  { value: "msb-to-lsb", label: "MSB -> LSB (8..1)" },
+];
+
+const BYTE_PACK_OPTIONS: Array<{ value: ExtractionBytePackOrder; label: string }> = [
+  { value: "msb-first", label: "Byte MSB first" },
+  { value: "lsb-first", label: "Byte LSB first" },
+];
+
+function buildExtractionDownloadName(
+  sourceFileName: string,
+  selectedPlanes: PlaneSpec[],
+  options: BitExtractionOptions,
+): string {
+  const baseName = sourceFileName.replace(/\.[^.]+$/, "") || "image";
+  const selectionPart = selectedPlanes.length === 1 ? selectedPlanes[0].id : `${selectedPlanes.length}planes`;
+
+  return `${baseName}_${selectionPart}_${options.scanOrder}_${options.channelOrder}_${options.bitOrder}_${options.bytePackOrder}.bin`;
+}
 
 function App() {
   const [decoded, setDecoded] = useState<DecodedImage | null>(null);
-  const [sourceUrl, setSourceUrl] = useState<string | null>(null);
-  const [selectedPlaneId, setSelectedPlaneId] = useState<string>(PLANE_SPECS[0].id);
+  const [selectedPlaneIds, setSelectedPlaneIds] = useState<string[]>([PLANE_SPECS[0].id]);
+  const [activePlaneId, setActivePlaneId] = useState<string>(PLANE_SPECS[0].id);
+  const [extractionOptions, setExtractionOptions] = useState<BitExtractionOptions>(DEFAULT_EXTRACTION_OPTIONS);
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const sourceUrlRef = useRef<string | null>(null);
   const planeCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const planeStripRef = useRef<HTMLDivElement | null>(null);
 
-  const selectedPlane = useMemo(
-    () => PLANE_SPECS.find((plane) => plane.id === selectedPlaneId) ?? PLANE_SPECS[0],
-    [selectedPlaneId],
+  const selectedPlaneSet = useMemo(() => new Set(selectedPlaneIds), [selectedPlaneIds]);
+  const selectedPlanes = useMemo(
+    () => PLANE_SPECS.filter((plane) => selectedPlaneSet.has(plane.id)),
+    [selectedPlaneSet],
   );
 
-  const selectedPlaneIndex = useMemo(
-    () => PLANE_SPECS.findIndex((plane) => plane.id === selectedPlane.id),
-    [selectedPlane.id],
+  const activePlane = useMemo(
+    () => PLANE_SPECS.find((plane) => plane.id === activePlaneId) ?? PLANE_SPECS[0],
+    [activePlaneId],
   );
 
-  const updateSourceUrl = useCallback((nextUrl: string | null) => {
-    if (sourceUrlRef.current) {
-      URL.revokeObjectURL(sourceUrlRef.current);
+  const activePlaneIndex = useMemo(
+    () => PLANE_SPECS.findIndex((plane) => plane.id === activePlane.id),
+    [activePlane.id],
+  );
+
+  const selectionLabel = useMemo(() => {
+    if (selectedPlanes.length === 0) {
+      return "No selection";
+    }
+    if (selectedPlanes.length === 1) {
+      return selectedPlanes[0].label;
+    }
+    return `${selectedPlanes.length} planes combined`;
+  }, [selectedPlanes]);
+
+  const hexDumpView = useMemo(() => {
+    if (!decoded || selectedPlanes.length === 0) {
+      return null;
     }
 
-    sourceUrlRef.current = nextUrl;
-    setSourceUrl(nextUrl);
-  }, []);
+    const extracted = extractBitPlaneStream(decoded.imageData, selectedPlanes, extractionOptions, HEX_DUMP_MAX_BYTES);
+    const hexDump = buildHexDump(extracted.bytes, extracted.totalBytes, extracted.totalBits);
+    return {
+      ...hexDump,
+      bitsPerPixel: extracted.bitsPerPixel,
+    };
+  }, [decoded, extractionOptions, selectedPlanes]);
 
   const resetState = useCallback(() => {
     setDecoded(null);
-    setSelectedPlaneId(PLANE_SPECS[0].id);
+    setSelectedPlaneIds([PLANE_SPECS[0].id]);
+    setActivePlaneId(PLANE_SPECS[0].id);
     setError(null);
-    updateSourceUrl(null);
-  }, [updateSourceUrl]);
+  }, []);
 
   const handleFile = useCallback(
     async (file: File) => {
@@ -52,20 +122,20 @@ function App() {
 
       try {
         const result = await decodeImageFile(file);
-        const nextSourceUrl = URL.createObjectURL(file);
         setDecoded(result);
-        setSelectedPlaneId(PLANE_SPECS[0].id);
-        updateSourceUrl(nextSourceUrl);
+        setSelectedPlaneIds([PLANE_SPECS[0].id]);
+        setActivePlaneId(PLANE_SPECS[0].id);
       } catch (loadError) {
         const message = loadError instanceof Error ? loadError.message : "Unable to process this image.";
         setError(message);
         setDecoded(null);
-        updateSourceUrl(null);
+        setSelectedPlaneIds([PLANE_SPECS[0].id]);
+        setActivePlaneId(PLANE_SPECS[0].id);
       } finally {
         setIsLoading(false);
       }
     },
-    [updateSourceUrl],
+    [],
   );
 
   const handleInput = useCallback(
@@ -93,17 +163,55 @@ function App() {
     [handleFile],
   );
 
+  const togglePlaneSelection = useCallback((planeId: string) => {
+    setActivePlaneId(planeId);
+    setSelectedPlaneIds((currentSelection) => {
+      if (currentSelection.includes(planeId)) {
+        return currentSelection.filter((id) => id !== planeId);
+      }
+      return [...currentSelection, planeId];
+    });
+  }, []);
+
   const movePlane = useCallback(
     (step: 1 | -1) => {
-      if (selectedPlaneIndex < 0) {
+      if (activePlaneIndex < 0) {
         return;
       }
 
-      const nextIndex = (selectedPlaneIndex + step + PLANE_SPECS.length) % PLANE_SPECS.length;
-      setSelectedPlaneId(PLANE_SPECS[nextIndex].id);
+      const nextIndex = (activePlaneIndex + step + PLANE_SPECS.length) % PLANE_SPECS.length;
+      const nextPlaneId = PLANE_SPECS[nextIndex].id;
+      setActivePlaneId(nextPlaneId);
+      setSelectedPlaneIds([nextPlaneId]);
     },
-    [selectedPlaneIndex],
+    [activePlaneIndex],
   );
+
+  const resetPlaneSelection = useCallback(() => {
+    setActivePlaneId(PLANE_SPECS[0].id);
+    setSelectedPlaneIds([PLANE_SPECS[0].id]);
+  }, []);
+
+  const downloadHexDumpData = useCallback(() => {
+    if (!decoded || selectedPlanes.length === 0) {
+      return;
+    }
+
+    const extracted = extractBitPlaneStream(decoded.imageData, selectedPlanes, extractionOptions, Number.MAX_SAFE_INTEGER);
+    const blob = new Blob([extracted.bytes], { type: "application/octet-stream" });
+    const objectUrl = URL.createObjectURL(blob);
+
+    try {
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = buildExtractionDownloadName(decoded.filename, selectedPlanes, extractionOptions);
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }, [decoded, extractionOptions, selectedPlanes]);
 
   useEffect(() => {
     if (!planeCanvasRef.current) {
@@ -116,36 +224,29 @@ function App() {
       return;
     }
 
-    if (!decoded) {
+    if (!decoded || selectedPlanes.length === 0) {
       context.clearRect(0, 0, canvas.width, canvas.height);
       return;
     }
 
-    const planeImageData = extractBitPlane(decoded.imageData, selectedPlane);
+    const planeImageData =
+      selectedPlanes.length === 1
+        ? extractBitPlane(decoded.imageData, selectedPlanes[0])
+        : extractCombinedBitPlanes(decoded.imageData, selectedPlanes);
+
     canvas.width = planeImageData.width;
     canvas.height = planeImageData.height;
     context.putImageData(planeImageData, 0, 0);
-  }, [decoded, selectedPlane]);
+  }, [decoded, selectedPlanes]);
 
   useEffect(() => {
     if (!planeStripRef.current) {
       return;
     }
 
-    const selectedButton = planeStripRef.current.querySelector<HTMLButtonElement>(
-      `button[data-plane-id="${selectedPlaneId}"]`,
-    );
-    selectedButton?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
-  }, [selectedPlaneId]);
-
-  useEffect(
-    () => () => {
-      if (sourceUrlRef.current) {
-        URL.revokeObjectURL(sourceUrlRef.current);
-      }
-    },
-    [],
-  );
+    const activeButton = planeStripRef.current.querySelector<HTMLButtonElement>(`button[data-plane-id="${activePlaneId}"]`);
+    activeButton?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+  }, [activePlaneId]);
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 px-4 py-8 md:px-8">
@@ -238,7 +339,9 @@ function App() {
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-ink">Bit-Plane Navigator</h2>
-            <p className="text-xs text-ink/70">Use controls or scroll the list to jump between channel bit-planes.</p>
+            <p className="text-xs text-ink/70">
+              One row per color channel. Click any bit buttons to toggle multi-selection and combine planes.
+            </p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -258,28 +361,47 @@ function App() {
             >
               Next
             </button>
+            <button
+              type="button"
+              className="rounded-lg border border-clay px-3 py-2 text-sm font-medium text-ink transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-45"
+              onClick={resetPlaneSelection}
+              disabled={!decoded}
+            >
+              Reset
+            </button>
           </div>
         </div>
 
-        <div ref={planeStripRef} className="flex gap-2 overflow-x-auto pb-2">
-          {PLANE_SPECS.map((plane) => {
-            const isSelected = plane.id === selectedPlaneId;
-
+        <div ref={planeStripRef} className="space-y-3">
+          {CHANNEL_ROWS.map((channelLabel) => {
             return (
-              <button
-                key={plane.id}
-                type="button"
-                data-plane-id={plane.id}
-                onClick={() => setSelectedPlaneId(plane.id)}
-                disabled={!decoded}
-                className={`whitespace-nowrap rounded-full border px-3 py-2 text-xs font-medium transition ${
-                  isSelected
-                    ? "border-accent bg-accent text-white"
-                    : "border-clay text-ink hover:border-accent hover:text-accent"
-                } disabled:cursor-not-allowed disabled:opacity-45`}
-              >
-                {plane.label}
-              </button>
+              <div key={channelLabel} className="grid gap-2 md:grid-cols-[5.75rem_1fr] md:items-center">
+                <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-ink/65">{channelLabel}</p>
+                <div className="flex flex-wrap gap-2">
+                  {PLANE_SPECS.filter((plane) => plane.channelLabel === channelLabel).map((plane) => {
+                    const isSelected = selectedPlaneSet.has(plane.id);
+                    const isActive = plane.id === activePlaneId;
+
+                    return (
+                      <button
+                        key={plane.id}
+                        type="button"
+                        data-plane-id={plane.id}
+                        title={plane.label}
+                        onClick={() => togglePlaneSelection(plane.id)}
+                        disabled={!decoded}
+                        className={`min-w-10 rounded-full border px-3 py-2 text-xs font-medium transition ${
+                          isSelected
+                            ? "border-accent bg-accent text-white"
+                            : "border-clay text-ink hover:border-accent hover:text-accent"
+                        } ${isActive ? "ring-2 ring-accent/25 ring-offset-1" : ""} disabled:cursor-not-allowed disabled:opacity-45`}
+                      >
+                        {plane.bitPosition}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             );
           })}
         </div>
@@ -290,22 +412,36 @@ function App() {
           <div className="mb-3 flex items-center justify-between gap-3">
             <h3 className="text-base font-semibold text-ink">Selected Plane</h3>
             <span className="rounded-full bg-accentSoft px-3 py-1 font-mono text-xs uppercase tracking-wider text-accent">
-              {selectedPlane.label}
+              {selectionLabel}
             </span>
           </div>
-          <p className="mb-3 text-xs text-ink/70">
-            {selectedPlane.bitPosition === 1
-              ? "Least-significant bit plane."
-              : selectedPlane.bitPosition === 8
-                ? "Most-significant bit plane."
-                : "Intermediate bit plane."}
+          <p className="mb-2 text-xs text-ink/70">
+            {selectedPlanes.length === 0
+              ? "No bit-planes selected."
+              : selectedPlanes.length === 1
+                ? selectedPlanes[0].bitPosition === 1
+                  ? "Least-significant bit plane."
+                  : selectedPlanes[0].bitPosition === 8
+                    ? "Most-significant bit plane."
+                    : "Intermediate bit plane."
+                : "Combined view uses logical OR across selected planes."}
           </p>
-          <p className="mb-3 text-xs text-ink/60">Preview is rendered at native pixel resolution (no CSS downsampling).</p>
+          {selectedPlanes.length > 1 ? (
+            <p className="mb-3 text-xs text-ink/60">{selectedPlanes.map((plane) => plane.label).join(", ")}</p>
+          ) : (
+            <p className="mb-3 text-xs text-ink/60">Preview is rendered at native pixel resolution (no CSS downsampling).</p>
+          )}
           <div className="overflow-auto rounded-xl border border-clay bg-white p-2">
             <canvas
               ref={planeCanvasRef}
               className="pixelated block rounded-md bg-black/5"
-              aria-label={`Visualized ${selectedPlane.label} bit plane`}
+              aria-label={
+                selectedPlanes.length > 1
+                  ? "Visualized combined bit planes"
+                  : selectedPlanes.length === 1
+                    ? `Visualized ${selectedPlanes[0].label} bit plane`
+                    : "No bit plane selected"
+              }
             />
             {!decoded ? (
               <div className="grid h-40 place-items-center text-sm text-ink/60">Upload an image to render bit-planes.</div>
@@ -315,17 +451,119 @@ function App() {
 
         <article className="rounded-2xl border border-clay bg-white/95 p-4 shadow-panel">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-base font-semibold text-ink">Original Image</h3>
+            <h3 className="text-base font-semibold text-ink">Hex Dump</h3>
+            <button
+              type="button"
+              onClick={downloadHexDumpData}
+              disabled={!decoded || selectedPlanes.length === 0}
+              className="rounded-lg border border-clay px-3 py-2 text-xs font-medium text-ink transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              Download
+            </button>
           </div>
+          <div className="mb-3 grid gap-2 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-[0.08em] text-ink/65">
+              <span>Scan Order</span>
+              <select
+                value={extractionOptions.scanOrder}
+                onChange={(event) =>
+                  setExtractionOptions((current) => ({
+                    ...current,
+                    scanOrder: event.target.value as ExtractionScanOrder,
+                  }))
+                }
+                disabled={!decoded}
+                className="rounded-md border border-clay bg-white px-2 py-1 text-[11px] normal-case tracking-normal text-ink disabled:opacity-50"
+              >
+                {SCAN_ORDER_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-[0.08em] text-ink/65">
+              <span>Channel Order</span>
+              <select
+                value={extractionOptions.channelOrder}
+                onChange={(event) =>
+                  setExtractionOptions((current) => ({
+                    ...current,
+                    channelOrder: event.target.value as ExtractionChannelOrder,
+                  }))
+                }
+                disabled={!decoded}
+                className="rounded-md border border-clay bg-white px-2 py-1 text-[11px] normal-case tracking-normal text-ink disabled:opacity-50"
+              >
+                {CHANNEL_ORDER_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-[0.08em] text-ink/65">
+              <span>Bit Order</span>
+              <select
+                value={extractionOptions.bitOrder}
+                onChange={(event) =>
+                  setExtractionOptions((current) => ({
+                    ...current,
+                    bitOrder: event.target.value as ExtractionBitOrder,
+                  }))
+                }
+                disabled={!decoded}
+                className="rounded-md border border-clay bg-white px-2 py-1 text-[11px] normal-case tracking-normal text-ink disabled:opacity-50"
+              >
+                {BIT_ORDER_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-[0.08em] text-ink/65">
+              <span>Byte Packing</span>
+              <select
+                value={extractionOptions.bytePackOrder}
+                onChange={(event) =>
+                  setExtractionOptions((current) => ({
+                    ...current,
+                    bytePackOrder: event.target.value as ExtractionBytePackOrder,
+                  }))
+                }
+                disabled={!decoded}
+                className="rounded-md border border-clay bg-white px-2 py-1 text-[11px] normal-case tracking-normal text-ink disabled:opacity-50"
+              >
+                {BYTE_PACK_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {hexDumpView ? (
+            <div className="mb-3 grid grid-cols-2 gap-2 text-xs text-ink/70">
+              <p>Total bits: {hexDumpView.totalBits.toLocaleString()}</p>
+              <p className="text-right">Total bytes: {hexDumpView.totalBytes.toLocaleString()}</p>
+              <p>Bits per pixel: {hexDumpView.bitsPerPixel.toLocaleString()}</p>
+              <p className="text-right">{hexDumpView.isTruncated ? "Truncated preview" : "Full dump"}</p>
+              <p>Shown bytes: {hexDumpView.shownBytes.toLocaleString()}</p>
+            </div>
+          ) : null}
           <div className="overflow-auto rounded-xl border border-clay bg-white p-2">
-            {sourceUrl ? (
-              <img
-                src={sourceUrl}
-                alt="Original uploaded image"
-                className="mx-auto block max-h-[60vh] max-w-full rounded-md object-contain"
-              />
+            {hexDumpView && hexDumpView.shownBytes > 0 ? (
+              <pre className="font-mono text-[11px] leading-relaxed text-ink/90">{hexDumpView.text}</pre>
+            ) : decoded ? (
+              <div className="grid h-40 place-items-center text-sm text-ink/60">
+                No bit plane selected. Select one or more planes to view the hex dump.
+              </div>
             ) : (
-              <div className="grid h-40 place-items-center text-sm text-ink/60">No source image loaded.</div>
+              <div className="grid h-40 place-items-center text-sm text-ink/60">Upload an image to inspect hex data.</div>
             )}
           </div>
         </article>

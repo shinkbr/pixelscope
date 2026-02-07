@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/utils/bitplane.ts","./src/utils/exif.ts","./src/utils/format.ts","./src/utils/hexdump.ts","./src/utils/image.ts","./src/utils/trailingdata.ts"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/utils/bitplane.ts","./src/utils/exif.ts","./src/utils/format.ts","./src/utils/hexdump.ts","./src/utils/image.ts","./src/utils/payloadcarving.ts","./src/utils/trailingdata.ts"],"errors":true,"version":"5.9.3"}

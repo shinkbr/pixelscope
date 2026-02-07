@@ -5,6 +5,7 @@ A Vite + React + Tailwind web app for steganography-focused image inspection.
 ## Features
 
 - Upload `PNG`, `JPEG`, `WebP`, `BMP`, `TIFF`, and `GIF` images in-browser (no server required).
+- Custom PixelScope favicon with a pixel-grid magnifier mark.
 - GIF frame-level analysis with frame navigation when browser decoding support is available.
 - Bit-plane analysis for all channels:
   - `Red 1..8`

@@ -7,7 +7,7 @@
     "dev": "vite --host",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host",
-    "format": "eslint . --ext ts,tsx --fix",
+    "format": "npx --yes prettier@3 --check .",
     "lint": "eslint . --ext ts,tsx",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

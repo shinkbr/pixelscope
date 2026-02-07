@@ -117,6 +117,7 @@ test("decodeImageFile decodes with createImageBitmap when available", async () =
   mockedReadExifMetadata.mockResolvedValueOnce({
     source: "exifr",
     entries: [{ group: "ifd0", tagId: 0, tagName: "Make", value: "Canon" }],
+    location: null,
   });
   mockedExtractTrailingData.mockReturnValueOnce({
     containerEndOffset: 4,

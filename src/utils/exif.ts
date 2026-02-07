@@ -1,12 +1,273 @@
 import { parse as parseExif } from "exifr";
-import type { ExifEntry, ExifGroup, ExifMetadata } from "../types";
+import type {
+  ExifEntry,
+  ExifGroup,
+  ExifLocation,
+  ExifMetadata,
+} from "../types";
 
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 const BASE64_MIN_LENGTH = 120;
 const MAX_SERIALIZED_LENGTH = 20_000;
+const GPS_SEARCH_DEPTH = 8;
+const LATITUDE_KEYS = new Set(["gpslatitude", "latitude", "lat"]);
+const LONGITUDE_KEYS = new Set(["gpslongitude", "longitude", "lng", "lon"]);
+const LATITUDE_REF_KEYS = new Set(["gpslatituderef", "latituderef"]);
+const LONGITUDE_REF_KEYS = new Set(["gpslongituderef", "longituderef"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function normalizeGpsKey(key: string): string {
+  return key.replace(/[^a-z]/gi, "").toLowerCase();
+}
+
+function collectValuesByKeySet(
+  value: unknown,
+  keys: Set<string>,
+  output: unknown[],
+  depth: number,
+): void {
+  if (depth > GPS_SEARCH_DEPTH) {
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectValuesByKeySet(item, keys, output, depth + 1);
+    }
+    return;
+  }
+
+  if (!isRecord(value)) {
+    return;
+  }
+
+  for (const [key, nestedValue] of Object.entries(value)) {
+    if (keys.has(normalizeGpsKey(key))) {
+      output.push(nestedValue);
+    }
+    collectValuesByKeySet(nestedValue, keys, output, depth + 1);
+  }
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (normalized.length === 0) {
+      return null;
+    }
+
+    const parsed = Number(normalized);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+
+    const firstNumericPart = normalized.match(/[-+]?\d+(\.\d+)?/);
+    if (!firstNumericPart) {
+      return null;
+    }
+    const fallback = Number(firstNumericPart[0]);
+    return Number.isFinite(fallback) ? fallback : null;
+  }
+
+  return null;
+}
+
+function parseCoordinatePair(value: unknown): ExifLocation | null {
+  if (Array.isArray(value) && value.length >= 2) {
+    const latitude = toFiniteNumber(value[0]);
+    const longitude = toFiniteNumber(value[1]);
+    if (latitude !== null && longitude !== null) {
+      return { latitude, longitude };
+    }
+  }
+
+  if (typeof value === "string") {
+    const matches = value.match(/[-+]?\d+(\.\d+)?/g);
+    if (matches && matches.length >= 2) {
+      const latitude = Number(matches[0]);
+      const longitude = Number(matches[1]);
+      if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+        return { latitude, longitude };
+      }
+    }
+  }
+
+  return null;
+}
+
+function parseSingleCoordinate(value: unknown): number | null {
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return null;
+    }
+
+    if (value.length === 2) {
+      const first = toFiniteNumber(value[0]);
+      const second = toFiniteNumber(value[1]);
+      if (first !== null && second !== null && Math.abs(second) > 60) {
+        return first;
+      }
+    }
+
+    const numericValues = value
+      .map((item) => toFiniteNumber(item))
+      .filter((item): item is number => item !== null);
+
+    if (numericValues.length === 0) {
+      return null;
+    }
+
+    if (numericValues.length === 1) {
+      return numericValues[0];
+    }
+
+    const sign = numericValues[0] < 0 ? -1 : 1;
+    const degrees = Math.abs(numericValues[0]);
+    const minutes = Math.abs(numericValues[1] ?? 0);
+    const seconds = Math.abs(numericValues[2] ?? 0);
+
+    return sign * (degrees + minutes / 60 + seconds / 3600);
+  }
+
+  return toFiniteNumber(value);
+}
+
+function findDirection(values: unknown[]): "N" | "S" | "E" | "W" | null {
+  for (const value of values) {
+    if (typeof value !== "string") {
+      continue;
+    }
+
+    const match = value.toUpperCase().match(/[NSEW]/);
+    if (match?.[0] === "N") {
+      return "N";
+    }
+    if (match?.[0] === "S") {
+      return "S";
+    }
+    if (match?.[0] === "E") {
+      return "E";
+    }
+    if (match?.[0] === "W") {
+      return "W";
+    }
+  }
+
+  return null;
+}
+
+function applyDirection(
+  coordinate: number,
+  direction: "N" | "S" | "E" | "W" | null,
+  axis: "lat" | "lon",
+): number {
+  if (!direction) {
+    return coordinate;
+  }
+
+  if (axis === "lat" && (direction === "N" || direction === "S")) {
+    return direction === "S" ? -Math.abs(coordinate) : Math.abs(coordinate);
+  }
+
+  if (axis === "lon" && (direction === "E" || direction === "W")) {
+    return direction === "W" ? -Math.abs(coordinate) : Math.abs(coordinate);
+  }
+
+  return coordinate;
+}
+
+function isValidCoordinatePair(latitude: number, longitude: number): boolean {
+  return (
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude) &&
+    latitude >= -90 &&
+    latitude <= 90 &&
+    longitude >= -180 &&
+    longitude <= 180
+  );
+}
+
+function extractGpsLocation(
+  parsed: Record<string, unknown>,
+): ExifLocation | null {
+  const latitudeValues: unknown[] = [];
+  const longitudeValues: unknown[] = [];
+  const latitudeRefValues: unknown[] = [];
+  const longitudeRefValues: unknown[] = [];
+
+  collectValuesByKeySet(parsed, LATITUDE_KEYS, latitudeValues, 0);
+  collectValuesByKeySet(parsed, LONGITUDE_KEYS, longitudeValues, 0);
+  collectValuesByKeySet(parsed, LATITUDE_REF_KEYS, latitudeRefValues, 0);
+  collectValuesByKeySet(parsed, LONGITUDE_REF_KEYS, longitudeRefValues, 0);
+
+  const latitudeDirection = findDirection(latitudeRefValues);
+  const longitudeDirection = findDirection(longitudeRefValues);
+
+  for (const latitudeValue of latitudeValues) {
+    const latitude = parseSingleCoordinate(latitudeValue);
+    if (latitude === null) {
+      continue;
+    }
+
+    for (const longitudeValue of longitudeValues) {
+      const longitude = parseSingleCoordinate(longitudeValue);
+      if (longitude === null) {
+        continue;
+      }
+
+      const normalizedLatitude = applyDirection(
+        latitude,
+        latitudeDirection,
+        "lat",
+      );
+      const normalizedLongitude = applyDirection(
+        longitude,
+        longitudeDirection,
+        "lon",
+      );
+
+      if (isValidCoordinatePair(normalizedLatitude, normalizedLongitude)) {
+        return {
+          latitude: normalizedLatitude,
+          longitude: normalizedLongitude,
+        };
+      }
+    }
+  }
+
+  for (const pairCandidate of [...latitudeValues, ...longitudeValues]) {
+    const pair = parseCoordinatePair(pairCandidate);
+    if (!pair) {
+      continue;
+    }
+
+    const normalizedLatitude = applyDirection(
+      pair.latitude,
+      latitudeDirection,
+      "lat",
+    );
+    const normalizedLongitude = applyDirection(
+      pair.longitude,
+      longitudeDirection,
+      "lon",
+    );
+
+    if (isValidCoordinatePair(normalizedLatitude, normalizedLongitude)) {
+      return {
+        latitude: normalizedLatitude,
+        longitude: normalizedLongitude,
+      };
+    }
+  }
+
+  return null;
 }
 
 function getExifGroup(tagPath: string): ExifGroup {
@@ -255,6 +516,21 @@ function sortEntries(entries: ExifEntry[]): ExifEntry[] {
   });
 }
 
+export const __exifInternals = {
+  normalizeGpsKey,
+  collectValuesByKeySet,
+  toFiniteNumber,
+  parseCoordinatePair,
+  parseSingleCoordinate,
+  findDirection,
+  applyDirection,
+  extractGpsLocation,
+  primitiveToString,
+  collectBase64Candidates,
+  pushEntry,
+  flattenMetadata,
+};
+
 export async function readExifMetadata(
   file: File,
 ): Promise<ExifMetadata | null> {
@@ -302,6 +578,7 @@ export async function readExifMetadata(
     return {
       source: "exifr",
       entries: sortEntries(entries),
+      location: extractGpsLocation(parsed),
     };
   } catch {
     return null;

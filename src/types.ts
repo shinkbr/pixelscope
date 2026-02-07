@@ -19,9 +19,15 @@ export interface ExifEntry {
   value: string;
 }
 
+export interface ExifLocation {
+  latitude: number;
+  longitude: number;
+}
+
 export interface ExifMetadata {
   source: "exifr";
   entries: ExifEntry[];
+  location: ExifLocation | null;
 }
 
 export interface TrailingData {

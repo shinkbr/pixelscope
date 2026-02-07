@@ -1,6 +1,6 @@
 import { parse as parseExif } from "exifr";
 import { beforeEach, expect, test, vi } from "vitest";
-import { readExifMetadata } from "../src/utils/exif.ts";
+import { __exifInternals, readExifMetadata } from "../src/utils/exif.ts";
 
 vi.mock("exifr", () => ({
   parse: vi.fn(),
@@ -99,6 +99,10 @@ test("readExifMetadata flattens objects, arrays, dates and binary values", async
         entry.tagName.startsWith("Base64Payload") && entry.value === base64,
     ),
   ).toBe(true);
+  expect(metadata?.location).toEqual({
+    latitude: 37.1,
+    longitude: -122.3,
+  });
 });
 
 test("readExifMetadata uses serialized fallback for base64 when flattening yields no entries", async () => {
@@ -114,6 +118,7 @@ test("readExifMetadata uses serialized fallback for base64 when flattening yield
       (entry) => entry.tagName === "Base64Payload" && entry.value === keyBase64,
     ),
   ).toBe(true);
+  expect(metadata?.location).toBeNull();
 });
 
 test("readExifMetadata truncates overly long values", async () => {
@@ -181,6 +186,7 @@ test("readExifMetadata covers edge primitive branches and multiple base64 payloa
   expect(
     metadata?.entries.some((entry) => entry.tagName === "nonFiniteNumber"),
   ).toBe(false);
+  expect(metadata?.location).toBeNull();
 });
 
 test("readExifMetadata enforces recursion depth limit", async () => {
@@ -200,6 +206,7 @@ test("readExifMetadata enforces recursion depth limit", async () => {
   expect(
     metadata?.entries.some((entry) => entry.tagName.includes("a.b.c.d.e.f.g")),
   ).toBe(false);
+  expect(metadata?.location).toBeNull();
 });
 
 test("readExifMetadata returns null when metadata has no extractable values", async () => {
@@ -212,4 +219,153 @@ test("readExifMetadata returns null when metadata has no extractable values", as
   });
 
   await expect(readExifMetadata(makeFile())).resolves.toBeNull();
+});
+
+test("readExifMetadata extracts GPS location from DMS and cardinal refs", async () => {
+  mockedParseExif.mockResolvedValueOnce({
+    gps: {
+      GPSLatitude: [37, 46, 29.64],
+      GPSLatitudeRef: "N",
+      GPSLongitude: [122, 25, 9.84],
+      GPSLongitudeRef: "W",
+    },
+  });
+
+  const metadata = await readExifMetadata(makeFile());
+
+  expect(metadata?.location?.latitude).toBeCloseTo(37.7749, 6);
+  expect(metadata?.location?.longitude).toBeCloseTo(-122.4194, 6);
+});
+
+test("exif internals cover GPS helper edge branches", () => {
+  const {
+    normalizeGpsKey,
+    collectValuesByKeySet,
+    toFiniteNumber,
+    parseCoordinatePair,
+    parseSingleCoordinate,
+    findDirection,
+    applyDirection,
+    extractGpsLocation,
+  } = __exifInternals;
+
+  expect(normalizeGpsKey("GPS-Latitude")).toBe("gpslatitude");
+
+  const deepCollected: unknown[] = [];
+  collectValuesByKeySet(
+    {
+      a: {
+        b: {
+          c: {
+            d: {
+              e: {
+                f: {
+                  g: {
+                    h: {
+                      i: {
+                        GPSLatitude: 1,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    new Set(["gpslatitude"]),
+    deepCollected,
+    0,
+  );
+  expect(deepCollected).toEqual([]);
+
+  const shallowCollected: unknown[] = [];
+  collectValuesByKeySet(
+    { GPSLatitude: "37.77" },
+    new Set(["gpslatitude"]),
+    shallowCollected,
+    0,
+  );
+  expect(shallowCollected).toEqual(["37.77"]);
+
+  expect(toFiniteNumber(" ")).toBeNull();
+  expect(toFiniteNumber("37.5")).toBe(37.5);
+  expect(toFiniteNumber("lat=37.5N")).toBe(37.5);
+  expect(toFiniteNumber("north")).toBeNull();
+  expect(toFiniteNumber({})).toBeNull();
+
+  expect(parseCoordinatePair("37.77, -122.41")).toEqual({
+    latitude: 37.77,
+    longitude: -122.41,
+  });
+  expect(parseCoordinatePair(["bad", -122.41])).toBeNull();
+  expect(parseCoordinatePair("north,south")).toBeNull();
+
+  expect(parseSingleCoordinate([])).toBeNull();
+  expect(parseSingleCoordinate([12])).toBe(12);
+  expect(parseSingleCoordinate([12, 70])).toBe(12);
+  expect(parseSingleCoordinate([12, 30, 30])).toBeCloseTo(12.508333, 6);
+  expect(parseSingleCoordinate("45.5")).toBe(45.5);
+
+  expect(findDirection([1, "north"])).toBe("N");
+  expect(findDirection(["south"])).toBe("S");
+  expect(findDirection(["east"])).toBe("E");
+  expect(findDirection(["west"])).toBe("W");
+  expect(findDirection([1])).toBeNull();
+
+  expect(applyDirection(10, "S", "lat")).toBe(-10);
+  expect(applyDirection(10, "N", "lat")).toBe(10);
+  expect(applyDirection(20, "W", "lon")).toBe(-20);
+  expect(applyDirection(-20, "E", "lon")).toBe(20);
+  expect(applyDirection(5, "E", "lat")).toBe(5);
+  expect(applyDirection(5, null, "lat")).toBe(5);
+
+  expect(
+    extractGpsLocation({
+      gpsLatitude: ["bad"],
+      gpsLongitude: [null],
+      latitude: "37.77, -122.41",
+    }),
+  ).toEqual({
+    latitude: 37.77,
+    longitude: -122.41,
+  });
+  expect(extractGpsLocation({ gpsLatitude: [200, 300] })).toBeNull();
+});
+
+test("exif internals cover base64 and flatten edge branches", () => {
+  const {
+    primitiveToString,
+    collectBase64Candidates,
+    pushEntry,
+    flattenMetadata,
+  } = __exifInternals;
+
+  expect(primitiveToString(null)).toBeNull();
+
+  const validBase64 = "QUJD".repeat(35);
+  expect(collectBase64Candidates("A ".repeat(60))).toEqual([]);
+  expect(collectBase64Candidates("A".repeat(122))).toEqual([]);
+  expect(
+    collectBase64Candidates(`${"A".repeat(60)}=${"A".repeat(59)}`),
+  ).toEqual([]);
+  expect(collectBase64Candidates(validBase64)).toEqual([validBase64]);
+
+  const entries: Array<{
+    group: "ifd0" | "exif" | "gps" | "interop" | "ifd1";
+    tagId: number;
+    tagName: string;
+    value: string;
+  }> = [];
+  const dedupe = new Set<string>();
+  pushEntry(entries, dedupe, "ifd0", "Blank", "   ");
+  expect(entries).toHaveLength(0);
+
+  pushEntry(entries, dedupe, "ifd0", "Dup", "same");
+  pushEntry(entries, dedupe, "ifd0", "Dup", "same");
+  expect(entries).toHaveLength(1);
+
+  flattenMetadata([validBase64], "exifPayload", entries, dedupe, 0);
+  expect(entries.some((entry) => entry.tagName === "Base64Payload")).toBe(true);
 });

@@ -4,6 +4,7 @@ import type {
   BitExtractionOptions,
   DecodedImage,
   ExifGroup,
+  ExifLocation,
   ExtractionBitOrder,
   ExtractionBytePackOrder,
   ExtractionChannelOrder,
@@ -118,6 +119,11 @@ function getExifSourceLabel(
     return "exifr";
   }
   return source;
+}
+
+function buildGoogleMapsEmbedUrl(location: ExifLocation): string {
+  const coordinates = `${location.latitude.toFixed(6)},${location.longitude.toFixed(6)}`;
+  return `https://maps.google.com/maps?q=${encodeURIComponent(coordinates)}&z=15&output=embed`;
 }
 
 function buildExtractionDownloadName(
@@ -341,6 +347,14 @@ function App() {
       entries:
         decoded.exif?.entries.filter((entry) => entry.group === group) ?? [],
     })).filter((group) => group.entries.length > 0);
+  }, [decoded]);
+
+  const exifMapEmbedUrl = useMemo(() => {
+    if (!decoded?.exif?.location) {
+      return null;
+    }
+
+    return buildGoogleMapsEmbedUrl(decoded.exif.location);
   }, [decoded]);
 
   const trailingDataView = useMemo(() => {
@@ -1370,38 +1384,69 @@ function App() {
                 ) : (
                   <div className="space-y-4">
                     {exifGroups.map((group) => (
-                      <article
-                        key={group.group}
-                        className="overflow-hidden rounded-xl border border-clay bg-white"
-                      >
-                        <header className="border-b border-clay/80 bg-paper/60 px-4 py-2">
-                          <h3 className="font-mono text-xs uppercase tracking-[0.16em] text-ink/75">
-                            {EXIF_GROUP_LABELS[group.group]}
-                          </h3>
-                        </header>
-                        <dl className="divide-y divide-clay/40">
-                          {group.entries.map((entry, entryIndex) => (
-                            <div
-                              key={`${group.group}-${entry.tagId}-${entryIndex}`}
-                              className="grid gap-1 px-4 py-2 sm:grid-cols-[16rem_1fr] sm:items-start"
-                            >
-                              <dt className="font-mono text-[11px] uppercase tracking-[0.08em] text-ink/65">
-                                {entry.tagName}
-                                <span className="ml-2 normal-case tracking-normal text-ink/45">
-                                  0x
-                                  {entry.tagId
-                                    .toString(16)
-                                    .toUpperCase()
-                                    .padStart(4, "0")}
+                      <div key={group.group} className="space-y-4">
+                        <article className="overflow-hidden rounded-xl border border-clay bg-white">
+                          <header className="border-b border-clay/80 bg-paper/60 px-4 py-2">
+                            <h3 className="font-mono text-xs uppercase tracking-[0.16em] text-ink/75">
+                              {EXIF_GROUP_LABELS[group.group]}
+                            </h3>
+                          </header>
+                          <dl className="divide-y divide-clay/40">
+                            {group.entries.map((entry, entryIndex) => (
+                              <div
+                                key={`${group.group}-${entry.tagId}-${entryIndex}`}
+                                className="grid gap-1 px-4 py-2 sm:grid-cols-[16rem_1fr] sm:items-start"
+                              >
+                                <dt className="font-mono text-[11px] uppercase tracking-[0.08em] text-ink/65">
+                                  {entry.tagName}
+                                  <span className="ml-2 normal-case tracking-normal text-ink/45">
+                                    0x
+                                    {entry.tagId
+                                      .toString(16)
+                                      .toUpperCase()
+                                      .padStart(4, "0")}
+                                  </span>
+                                </dt>
+                                <dd className="break-words text-sm text-ink">
+                                  {entry.value}
+                                </dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </article>
+                        {group.group === "gps" &&
+                        decoded.exif.location &&
+                        exifMapEmbedUrl ? (
+                          <article className="overflow-hidden rounded-xl border border-clay bg-white">
+                            <header className="border-b border-clay/80 bg-paper/60 px-4 py-2">
+                              <h3 className="font-mono text-xs uppercase tracking-[0.16em] text-ink/75">
+                                GPS Location
+                              </h3>
+                            </header>
+                            <div className="space-y-3 p-4">
+                              <p className="text-sm text-ink/80">
+                                Latitude:{" "}
+                                <span className="font-mono text-xs text-ink">
+                                  {decoded.exif.location.latitude.toFixed(6)}
+                                </span>{" "}
+                                | Longitude:{" "}
+                                <span className="font-mono text-xs text-ink">
+                                  {decoded.exif.location.longitude.toFixed(6)}
                                 </span>
-                              </dt>
-                              <dd className="break-words text-sm text-ink">
-                                {entry.value}
-                              </dd>
+                              </p>
+                              <div className="overflow-hidden rounded-lg border border-clay">
+                                <iframe
+                                  title="EXIF GPS location map"
+                                  src={exifMapEmbedUrl}
+                                  loading="lazy"
+                                  referrerPolicy="no-referrer-when-downgrade"
+                                  className="h-72 w-full"
+                                />
+                              </div>
                             </div>
-                          ))}
-                        </dl>
-                      </article>
+                          </article>
+                        ) : null}
+                      </div>
                     ))}
                   </div>
                 )}

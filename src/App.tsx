@@ -349,13 +349,15 @@ function App() {
     })).filter((group) => group.entries.length > 0);
   }, [decoded]);
 
+  const exifLocation = decoded?.exif?.location ?? null;
+
   const exifMapEmbedUrl = useMemo(() => {
-    if (!decoded?.exif?.location) {
+    if (!exifLocation) {
       return null;
     }
 
-    return buildGoogleMapsEmbedUrl(decoded.exif.location);
-  }, [decoded]);
+    return buildGoogleMapsEmbedUrl(exifLocation);
+  }, [exifLocation]);
 
   const trailingDataView = useMemo(() => {
     if (!decoded?.trailingData) {
@@ -1415,7 +1417,7 @@ function App() {
                           </dl>
                         </article>
                         {group.group === "gps" &&
-                        decoded.exif.location &&
+                        exifLocation &&
                         exifMapEmbedUrl ? (
                           <article className="overflow-hidden rounded-xl border border-clay bg-white">
                             <header className="border-b border-clay/80 bg-paper/60 px-4 py-2">
@@ -1427,11 +1429,11 @@ function App() {
                               <p className="text-sm text-ink/80">
                                 Latitude:{" "}
                                 <span className="font-mono text-xs text-ink">
-                                  {decoded.exif.location.latitude.toFixed(6)}
+                                  {exifLocation.latitude.toFixed(6)}
                                 </span>{" "}
                                 | Longitude:{" "}
                                 <span className="font-mono text-xs text-ink">
-                                  {decoded.exif.location.longitude.toFixed(6)}
+                                  {exifLocation.longitude.toFixed(6)}
                                 </span>
                               </p>
                               <div className="overflow-hidden rounded-lg border border-clay">

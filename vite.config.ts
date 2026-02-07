@@ -3,7 +3,9 @@ import { defineConfig } from "vitest/config";
 
 type MaybeProcess = { process?: { env?: Record<string, string | undefined> } };
 
-const repoName = (globalThis as MaybeProcess).process?.env?.GITHUB_REPOSITORY?.split("/")[1];
+const repoName = (
+  globalThis as MaybeProcess
+).process?.env?.GITHUB_REPOSITORY?.split("/")[1];
 const base = repoName ? `/${repoName}/` : "/";
 
 export default defineConfig({

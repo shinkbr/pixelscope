@@ -1,14 +1,17 @@
 import type { DecodedImage, TrailingData } from "../types";
 
-const PNG_SIGNATURE = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const PNG_SIGNATURE = new Uint8Array([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+]);
 
 function readUint32BE(bytes: Uint8Array, offset: number): number {
   return (
-    (bytes[offset] << 24) |
-    (bytes[offset + 1] << 16) |
-    (bytes[offset + 2] << 8) |
-    bytes[offset + 3]
-  ) >>> 0;
+    ((bytes[offset] << 24) |
+      (bytes[offset + 1] << 16) |
+      (bytes[offset + 2] << 8) |
+      bytes[offset + 3]) >>>
+    0
+  );
 }
 
 function findPngContainerEnd(bytes: Uint8Array): number | null {
@@ -91,7 +94,8 @@ function findJpegContainerEnd(bytes: Uint8Array): number | null {
       return null;
     }
 
-    const segmentLength = (bytes[markerOffset + 1] << 8) | bytes[markerOffset + 2];
+    const segmentLength =
+      (bytes[markerOffset + 1] << 8) | bytes[markerOffset + 2];
     if (segmentLength < 2) {
       return null;
     }
@@ -107,7 +111,10 @@ function findJpegContainerEnd(bytes: Uint8Array): number | null {
   return null;
 }
 
-function findContainerEndOffset(bytes: Uint8Array, format: DecodedImage["format"]): number | null {
+function findContainerEndOffset(
+  bytes: Uint8Array,
+  format: DecodedImage["format"],
+): number | null {
   if (format === "image/png") {
     return findPngContainerEnd(bytes);
   }
@@ -119,7 +126,10 @@ function findContainerEndOffset(bytes: Uint8Array, format: DecodedImage["format"
   return null;
 }
 
-export function extractTrailingData(bytes: Uint8Array, format: DecodedImage["format"]): TrailingData | null {
+export function extractTrailingData(
+  bytes: Uint8Array,
+  format: DecodedImage["format"],
+): TrailingData | null {
   const containerEndOffset = findContainerEndOffset(bytes, format);
   if (containerEndOffset === null || containerEndOffset >= bytes.length) {
     return null;

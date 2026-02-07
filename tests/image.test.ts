@@ -20,7 +20,10 @@ interface BitmapLike {
   close: () => void;
 }
 
-function installCanvas(width: number, height: number): {
+function installCanvas(
+  width: number,
+  height: number,
+): {
   drawImage: ReturnType<typeof vi.fn>;
   getImageData: ReturnType<typeof vi.fn>;
 } {
@@ -40,22 +43,23 @@ function installCanvas(width: number, height: number): {
     getContext: vi.fn(() => context),
   } as unknown as HTMLCanvasElement;
 
-  vi.stubGlobal(
-    "document",
-    {
-      createElement: vi.fn((tagName: string) => {
-        if (tagName !== "canvas") {
-          throw new Error("Unexpected tag");
-        }
-        return canvas;
-      }),
-    } as unknown as Document,
-  );
+  vi.stubGlobal("document", {
+    createElement: vi.fn((tagName: string) => {
+      if (tagName !== "canvas") {
+        throw new Error("Unexpected tag");
+      }
+      return canvas;
+    }),
+  } as unknown as Document);
 
   return { drawImage, getImageData };
 }
 
-function installImageClass(width: number, height: number, shouldError = false): void {
+function installImageClass(
+  width: number,
+  height: number,
+  shouldError = false,
+): void {
   class MockImage {
     public onload: null | (() => void) = null;
     public onerror: null | (() => void) = null;
@@ -102,7 +106,9 @@ test("decodeImageFile decodes with createImageBitmap when available", async () =
     byteLength: 1,
     bytes: new Uint8Array([0xaa]),
   });
-  const file = new File([new Uint8Array([1, 2, 3, 4, 5])], "sample.png", { type: "image/png" });
+  const file = new File([new Uint8Array([1, 2, 3, 4, 5])], "sample.png", {
+    type: "image/png",
+  });
 
   const decoded = await decodeImageFile(file);
 
@@ -128,7 +134,9 @@ test("decodeImageFile falls back to image element when createImageBitmap fails",
   mockedExtractTrailingData.mockImplementationOnce(() => {
     throw new Error("trailing failure");
   });
-  const file = new File([new Uint8Array([1, 2, 3])], "sample.jpg", { type: "image/jpg" });
+  const file = new File([new Uint8Array([1, 2, 3])], "sample.jpg", {
+    type: "image/jpg",
+  });
 
   const decoded = await decodeImageFile(file);
 
@@ -137,13 +145,18 @@ test("decodeImageFile falls back to image element when createImageBitmap fails",
   expect(decoded.height).toBe(2);
   expect(decoded.exif).toBeNull();
   expect(decoded.trailingData).toBeNull();
-  expect((globalThis.URL.revokeObjectURL as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("blob:test");
+  expect(
+    globalThis.URL.revokeObjectURL as ReturnType<typeof vi.fn>,
+  ).toHaveBeenCalledWith("blob:test");
 });
 
 test("decodeImageFile accepts extension-based format when MIME type is empty", async () => {
   installCanvas(1, 1);
   const close = vi.fn();
-  vi.stubGlobal("createImageBitmap", vi.fn(async () => ({ width: 1, height: 1, close })));
+  vi.stubGlobal(
+    "createImageBitmap",
+    vi.fn(async () => ({ width: 1, height: 1, close })),
+  );
   const file = new File([new Uint8Array([1])], "photo.jpeg", { type: "" });
 
   const decoded = await decodeImageFile(file);
@@ -152,26 +165,40 @@ test("decodeImageFile accepts extension-based format when MIME type is empty", a
 });
 
 test("decodeImageFile throws for unsupported file type", async () => {
-  const file = new File([new Uint8Array([1])], "note.txt", { type: "text/plain" });
+  const file = new File([new Uint8Array([1])], "note.txt", {
+    type: "text/plain",
+  });
   await expect(decodeImageFile(file)).rejects.toThrow("Unsupported file type");
 });
 
 test("decodeImageFile propagates image-size validation errors", async () => {
   installCanvas(5_000, 5_000);
-  vi.stubGlobal("createImageBitmap", vi.fn(async () => ({ width: 5_000, height: 5_000, close: vi.fn() })));
+  vi.stubGlobal(
+    "createImageBitmap",
+    vi.fn(async () => ({ width: 5_000, height: 5_000, close: vi.fn() })),
+  );
   installImageClass(5_000, 5_000);
-  const file = new File([new Uint8Array([1, 2])], "too-big.png", { type: "image/png" });
+  const file = new File([new Uint8Array([1, 2])], "too-big.png", {
+    type: "image/png",
+  });
 
   await expect(decodeImageFile(file)).rejects.toThrow("Image is too large");
 });
 
 test("decodeImageFile throws when image element cannot load", async () => {
   installCanvas(1, 1);
-  vi.stubGlobal("createImageBitmap", vi.fn(async () => {
-    throw new Error("bitmap failed");
-  }));
+  vi.stubGlobal(
+    "createImageBitmap",
+    vi.fn(async () => {
+      throw new Error("bitmap failed");
+    }),
+  );
   installImageClass(1, 1, true);
-  const file = new File([new Uint8Array([1])], "bad.png", { type: "image/png" });
+  const file = new File([new Uint8Array([1])], "bad.png", {
+    type: "image/png",
+  });
 
-  await expect(decodeImageFile(file)).rejects.toThrow("Unable to read image data.");
+  await expect(decodeImageFile(file)).rejects.toThrow(
+    "Unable to read image data.",
+  );
 });

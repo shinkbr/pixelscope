@@ -9,9 +9,9 @@ test("buildHexDump formats offset, hex, and ASCII", () => {
   expect(dump.totalBytes).toBe(5);
   expect(dump.totalBits).toBe(40);
   expect(dump.isTruncated).toBe(false);
-  expect(
-    dump.text,
-  ).toBe("00000000  41 20 7e 00 ff                                   |A ~..|");
+  expect(dump.text).toBe(
+    "00000000  41 20 7e 00 ff                                   |A ~..|",
+  );
 });
 
 test("buildHexDump reports truncation for empty shown bytes when totalBytes is non-zero", () => {

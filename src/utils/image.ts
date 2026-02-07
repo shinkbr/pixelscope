@@ -11,7 +11,11 @@ function normalizeImageFormat(file: File): DecodedImage["format"] | null {
     return "image/png";
   }
 
-  if (mimeType === "image/jpeg" || mimeType === "image/jpg" || mimeType === "image/pjpeg") {
+  if (
+    mimeType === "image/jpeg" ||
+    mimeType === "image/jpg" ||
+    mimeType === "image/pjpeg"
+  ) {
     return "image/jpeg";
   }
 
@@ -44,7 +48,11 @@ function ensureImageSize(width: number, height: number): void {
   }
 }
 
-function readFromCanvas(drawFn: (ctx: CanvasRenderingContext2D) => void, width: number, height: number): ImageData {
+function readFromCanvas(
+  drawFn: (ctx: CanvasRenderingContext2D) => void,
+  width: number,
+  height: number,
+): ImageData {
   ensureImageSize(width, height);
 
   const canvas = document.createElement("canvas");
@@ -78,9 +86,13 @@ async function decodeWithImageBitmap(file: File): Promise<ImageData> {
   })();
 
   try {
-    return readFromCanvas((ctx) => {
-      ctx.drawImage(bitmap, 0, 0);
-    }, bitmap.width, bitmap.height);
+    return readFromCanvas(
+      (ctx) => {
+        ctx.drawImage(bitmap, 0, 0);
+      },
+      bitmap.width,
+      bitmap.height,
+    );
   } finally {
     bitmap.close();
   }
@@ -91,9 +103,13 @@ async function decodeWithImageElement(file: File): Promise<ImageData> {
 
   try {
     const image = await loadImageFromUrl(objectUrl);
-    return readFromCanvas((ctx) => {
-      ctx.drawImage(image, 0, 0);
-    }, image.naturalWidth, image.naturalHeight);
+    return readFromCanvas(
+      (ctx) => {
+        ctx.drawImage(image, 0, 0);
+      },
+      image.naturalWidth,
+      image.naturalHeight,
+    );
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
@@ -102,7 +118,9 @@ async function decodeWithImageElement(file: File): Promise<ImageData> {
 export async function decodeImageFile(file: File): Promise<DecodedImage> {
   const format = normalizeImageFormat(file);
   if (!format) {
-    throw new Error("Unsupported file type. Please upload a PNG or JPEG image.");
+    throw new Error(
+      "Unsupported file type. Please upload a PNG or JPEG image.",
+    );
   }
 
   let imageData: ImageData;

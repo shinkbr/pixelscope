@@ -9,7 +9,9 @@ vi.mock("exifr", () => ({
 const mockedParseExif = vi.mocked(parseExif);
 
 function makeFile(name = "sample.jpg"): File {
-  return new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], name, { type: "image/jpeg" });
+  return new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], name, {
+    type: "image/jpeg",
+  });
 }
 
 beforeEach(() => {
@@ -45,22 +47,58 @@ test("readExifMetadata flattens objects, arrays, dates and binary values", async
 
   expect(metadata?.source).toBe("exifr");
   expect(metadata?.entries.length).toBeGreaterThan(0);
-  expect(metadata?.entries.some((entry) => entry.group === "ifd0" && entry.tagName === "Make" && entry.value === "Canon")).toBe(
-    true,
-  );
   expect(
     metadata?.entries.some(
-      (entry) => entry.group === "gps" && entry.tagName === "gpsLatitude" && entry.value.includes("37.1, -122.3"),
+      (entry) =>
+        entry.group === "ifd0" &&
+        entry.tagName === "Make" &&
+        entry.value === "Canon",
     ),
   ).toBe(true);
-  expect(metadata?.entries.some((entry) => entry.group === "interop" && entry.tagName === "interopData.flag")).toBe(true);
-  expect(metadata?.entries.some((entry) => entry.group === "ifd1" && entry.tagName === "thumbnailBlob")).toBe(true);
-  expect(metadata?.entries.some((entry) => entry.group === "exif" && entry.tagName === "exifIFD.CaptureDate")).toBe(true);
-  expect(metadata?.entries.some((entry) => entry.tagName === "rawBytes" && entry.value.startsWith("0x01ABCD"))).toBe(true);
   expect(
-    metadata?.entries.some((entry) => entry.tagName === "arrayBufferValue" && entry.value.startsWith("0x1020")),
+    metadata?.entries.some(
+      (entry) =>
+        entry.group === "gps" &&
+        entry.tagName === "gpsLatitude" &&
+        entry.value.includes("37.1, -122.3"),
+    ),
   ).toBe(true);
-  expect(metadata?.entries.some((entry) => entry.tagName.startsWith("Base64Payload") && entry.value === base64)).toBe(true);
+  expect(
+    metadata?.entries.some(
+      (entry) =>
+        entry.group === "interop" && entry.tagName === "interopData.flag",
+    ),
+  ).toBe(true);
+  expect(
+    metadata?.entries.some(
+      (entry) => entry.group === "ifd1" && entry.tagName === "thumbnailBlob",
+    ),
+  ).toBe(true);
+  expect(
+    metadata?.entries.some(
+      (entry) =>
+        entry.group === "exif" && entry.tagName === "exifIFD.CaptureDate",
+    ),
+  ).toBe(true);
+  expect(
+    metadata?.entries.some(
+      (entry) =>
+        entry.tagName === "rawBytes" && entry.value.startsWith("0x01ABCD"),
+    ),
+  ).toBe(true);
+  expect(
+    metadata?.entries.some(
+      (entry) =>
+        entry.tagName === "arrayBufferValue" &&
+        entry.value.startsWith("0x1020"),
+    ),
+  ).toBe(true);
+  expect(
+    metadata?.entries.some(
+      (entry) =>
+        entry.tagName.startsWith("Base64Payload") && entry.value === base64,
+    ),
+  ).toBe(true);
 });
 
 test("readExifMetadata uses serialized fallback for base64 when flattening yields no entries", async () => {
@@ -71,7 +109,11 @@ test("readExifMetadata uses serialized fallback for base64 when flattening yield
 
   const metadata = await readExifMetadata(makeFile());
 
-  expect(metadata?.entries.some((entry) => entry.tagName === "Base64Payload" && entry.value === keyBase64)).toBe(true);
+  expect(
+    metadata?.entries.some(
+      (entry) => entry.tagName === "Base64Payload" && entry.value === keyBase64,
+    ),
+  ).toBe(true);
 });
 
 test("readExifMetadata truncates overly long values", async () => {
@@ -80,7 +122,9 @@ test("readExifMetadata truncates overly long values", async () => {
   });
 
   const metadata = await readExifMetadata(makeFile());
-  const entry = metadata?.entries.find((candidate) => candidate.tagName === "exifUserComment");
+  const entry = metadata?.entries.find(
+    (candidate) => candidate.tagName === "exifUserComment",
+  );
 
   expect(entry).toBeDefined();
   expect(entry?.value.endsWith(" …")).toBe(true);
@@ -103,13 +147,40 @@ test("readExifMetadata covers edge primitive branches and multiple base64 payloa
   const metadata = await readExifMetadata(makeFile());
 
   expect(metadata).not.toBeNull();
-  expect(metadata?.entries.some((entry) => entry.tagName === "Value" && entry.value === "false")).toBe(true);
-  expect(metadata?.entries.some((entry) => entry.tagName === "typedLarge" && entry.value.endsWith("..."))).toBe(true);
-  expect(metadata?.entries.some((entry) => entry.tagName === "bufferLarge" && entry.value.endsWith("..."))).toBe(true);
-  expect(metadata?.entries.some((entry) => entry.tagName === "Base64Payload1" && entry.value === base64A)).toBe(true);
-  expect(metadata?.entries.some((entry) => entry.tagName === "Base64Payload2" && entry.value === base64B)).toBe(true);
-  expect(metadata?.entries.some((entry) => entry.tagName === "mixedArray[0].nested" && entry.value === "ok")).toBe(true);
-  expect(metadata?.entries.some((entry) => entry.tagName === "nonFiniteNumber")).toBe(false);
+  expect(
+    metadata?.entries.some(
+      (entry) => entry.tagName === "Value" && entry.value === "false",
+    ),
+  ).toBe(true);
+  expect(
+    metadata?.entries.some(
+      (entry) => entry.tagName === "typedLarge" && entry.value.endsWith("..."),
+    ),
+  ).toBe(true);
+  expect(
+    metadata?.entries.some(
+      (entry) => entry.tagName === "bufferLarge" && entry.value.endsWith("..."),
+    ),
+  ).toBe(true);
+  expect(
+    metadata?.entries.some(
+      (entry) => entry.tagName === "Base64Payload1" && entry.value === base64A,
+    ),
+  ).toBe(true);
+  expect(
+    metadata?.entries.some(
+      (entry) => entry.tagName === "Base64Payload2" && entry.value === base64B,
+    ),
+  ).toBe(true);
+  expect(
+    metadata?.entries.some(
+      (entry) =>
+        entry.tagName === "mixedArray[0].nested" && entry.value === "ok",
+    ),
+  ).toBe(true);
+  expect(
+    metadata?.entries.some((entry) => entry.tagName === "nonFiniteNumber"),
+  ).toBe(false);
 });
 
 test("readExifMetadata enforces recursion depth limit", async () => {
@@ -121,8 +192,14 @@ test("readExifMetadata enforces recursion depth limit", async () => {
   const metadata = await readExifMetadata(makeFile());
 
   expect(metadata).not.toBeNull();
-  expect(metadata?.entries.some((entry) => entry.tagName === "Keep" && entry.value === "ok")).toBe(true);
-  expect(metadata?.entries.some((entry) => entry.tagName.includes("a.b.c.d.e.f.g"))).toBe(false);
+  expect(
+    metadata?.entries.some(
+      (entry) => entry.tagName === "Keep" && entry.value === "ok",
+    ),
+  ).toBe(true);
+  expect(
+    metadata?.entries.some((entry) => entry.tagName.includes("a.b.c.d.e.f.g")),
+  ).toBe(false);
 });
 
 test("readExifMetadata returns null when metadata has no extractable values", async () => {

@@ -16,7 +16,11 @@ function byteToAscii(byte: number): string {
   return byte >= 32 && byte <= 126 ? String.fromCharCode(byte) : ".";
 }
 
-export function buildHexDump(bytes: Uint8Array, totalBytes: number, totalBits: number): HexDumpView {
+export function buildHexDump(
+  bytes: Uint8Array,
+  totalBytes: number,
+  totalBits: number,
+): HexDumpView {
   if (bytes.length === 0) {
     return {
       text: "",
@@ -31,7 +35,9 @@ export function buildHexDump(bytes: Uint8Array, totalBytes: number, totalBits: n
 
   for (let offset = 0; offset < bytes.length; offset += BYTES_PER_LINE) {
     const chunk = bytes.slice(offset, offset + BYTES_PER_LINE);
-    const hex = Array.from(chunk, byteToHex).join(" ").padEnd(BYTES_PER_LINE * 3 - 1, " ");
+    const hex = Array.from(chunk, byteToHex)
+      .join(" ")
+      .padEnd(BYTES_PER_LINE * 3 - 1, " ");
     const ascii = Array.from(chunk, byteToAscii).join("");
     lines.push(`${offset.toString(16).padStart(8, "0")}  ${hex}  |${ascii}|`);
   }

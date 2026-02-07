@@ -11,14 +11,20 @@ const CHANNELS: ReadonlyArray<{
   { key: "a", label: "Alpha", offset: 3 },
 ];
 
-const CHANNEL_ORDER_MAP: Record<BitExtractionOptions["channelOrder"], ReadonlyArray<ChannelKey>> = {
+const CHANNEL_ORDER_MAP: Record<
+  BitExtractionOptions["channelOrder"],
+  ReadonlyArray<ChannelKey>
+> = {
   rgba: ["r", "g", "b", "a"],
   bgra: ["b", "g", "r", "a"],
   argb: ["a", "r", "g", "b"],
   abgr: ["a", "b", "g", "r"],
 };
 
-const BIT_ORDER_MAP: Record<BitExtractionOptions["bitOrder"], ReadonlyArray<number>> = {
+const BIT_ORDER_MAP: Record<
+  BitExtractionOptions["bitOrder"],
+  ReadonlyArray<number>
+> = {
   "lsb-to-msb": [1, 2, 3, 4, 5, 6, 7, 8],
   "msb-to-lsb": [8, 7, 6, 5, 4, 3, 2, 1],
 };
@@ -44,12 +50,16 @@ export function buildPlaneSpecs(): PlaneSpec[] {
   return planes;
 }
 
-export function extractBitPlane(imageData: ImageData, plane: PlaneSpec): ImageData {
+export function extractBitPlane(
+  imageData: ImageData,
+  plane: PlaneSpec,
+): ImageData {
   const source = imageData.data;
   const output = new Uint8ClampedArray(source.length);
 
   for (let index = 0; index < source.length; index += 4) {
-    const planeBitIsSet = (source[index + plane.channelOffset] & plane.bitMask) !== 0;
+    const planeBitIsSet =
+      (source[index + plane.channelOffset] & plane.bitMask) !== 0;
     const value = planeBitIsSet ? 255 : 0;
 
     output[index] = value;
@@ -61,7 +71,11 @@ export function extractBitPlane(imageData: ImageData, plane: PlaneSpec): ImageDa
   return new ImageData(output, imageData.width, imageData.height);
 }
 
-function isAnyPlaneBitSet(source: Uint8ClampedArray, sourceIndex: number, planes: PlaneSpec[]): boolean {
+function isAnyPlaneBitSet(
+  source: Uint8ClampedArray,
+  sourceIndex: number,
+  planes: PlaneSpec[],
+): boolean {
   for (const plane of planes) {
     if ((source[sourceIndex + plane.channelOffset] & plane.bitMask) !== 0) {
       return true;
@@ -70,7 +84,10 @@ function isAnyPlaneBitSet(source: Uint8ClampedArray, sourceIndex: number, planes
   return false;
 }
 
-export function extractCombinedBitPlanes(imageData: ImageData, planes: PlaneSpec[]): ImageData {
+export function extractCombinedBitPlanes(
+  imageData: ImageData,
+  planes: PlaneSpec[],
+): ImageData {
   const source = imageData.data;
   const output = new Uint8ClampedArray(source.length);
 
@@ -94,7 +111,10 @@ export function extractCombinedBitPlanes(imageData: ImageData, planes: PlaneSpec
 }
 
 // Extract selected planes as an ordered bitstream, then repack into bytes.
-function orderSelectedPlanes(planes: PlaneSpec[], options: BitExtractionOptions): PlaneSpec[] {
+function orderSelectedPlanes(
+  planes: PlaneSpec[],
+  options: BitExtractionOptions,
+): PlaneSpec[] {
   const selectedPlaneLookup = new Map<string, PlaneSpec>();
   for (const plane of planes) {
     selectedPlaneLookup.set(plane.id, plane);
@@ -150,11 +170,14 @@ export function extractBitPlaneStream(
         return true;
       }
 
-      const planeBitIsSet = (source[pixelStartIndex + plane.channelOffset] & plane.bitMask) !== 0;
+      const planeBitIsSet =
+        (source[pixelStartIndex + plane.channelOffset] & plane.bitMask) !== 0;
       if (planeBitIsSet) {
         const byteIndex = emittedBits >> 3;
         const bitPositionInByte =
-          options.bytePackOrder === "msb-first" ? 7 - (emittedBits & 0b111) : emittedBits & 0b111;
+          options.bytePackOrder === "msb-first"
+            ? 7 - (emittedBits & 0b111)
+            : emittedBits & 0b111;
         bytes[byteIndex] |= 1 << bitPositionInByte;
       }
 

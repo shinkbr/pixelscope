@@ -78,7 +78,11 @@ function primitiveToString(value: unknown): string | null {
   }
 
   if (ArrayBuffer.isView(value)) {
-    const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    const bytes = new Uint8Array(
+      value.buffer,
+      value.byteOffset,
+      value.byteLength,
+    );
     if (bytes.length === 0) {
       return null;
     }
@@ -134,7 +138,13 @@ function collectBase64Candidates(value: string): string[] {
   return Array.from(candidates);
 }
 
-function pushEntry(entries: ExifEntry[], dedupe: Set<string>, group: ExifGroup, tagName: string, value: string): void {
+function pushEntry(
+  entries: ExifEntry[],
+  dedupe: Set<string>,
+  group: ExifGroup,
+  tagName: string,
+  value: string,
+): void {
   const normalizedTagName = tagName.length > 0 ? tagName : "(unknown)";
   const normalizedValue = value.trim();
   if (normalizedValue.length === 0) {
@@ -174,7 +184,8 @@ function flattenMetadata(
     if (typeof value === "string") {
       const candidates = collectBase64Candidates(value);
       for (let index = 0; index < candidates.length; index += 1) {
-        const tagName = candidates.length > 1 ? `Base64Payload${index + 1}` : "Base64Payload";
+        const tagName =
+          candidates.length > 1 ? `Base64Payload${index + 1}` : "Base64Payload";
         pushEntry(entries, dedupe, "exif", tagName, candidates[index]);
       }
     }
@@ -187,14 +198,22 @@ function flattenMetadata(
       return;
     }
 
-    const allPrimitive = value.every((item) => primitiveToString(item) !== null);
+    const allPrimitive = value.every(
+      (item) => primitiveToString(item) !== null,
+    );
     if (allPrimitive) {
       const serialized = value
         .map((item) => primitiveToString(item))
         .filter((item): item is string => item !== null)
         .join(", ");
       if (serialized.length > 0) {
-        pushEntry(entries, dedupe, getExifGroup(path), path || "Value", serialized);
+        pushEntry(
+          entries,
+          dedupe,
+          getExifGroup(path),
+          path || "Value",
+          serialized,
+        );
         for (const candidate of collectBase64Candidates(serialized)) {
           pushEntry(entries, dedupe, "exif", "Base64Payload", candidate);
         }
@@ -236,7 +255,9 @@ function sortEntries(entries: ExifEntry[]): ExifEntry[] {
   });
 }
 
-export async function readExifMetadata(file: File): Promise<ExifMetadata | null> {
+export async function readExifMetadata(
+  file: File,
+): Promise<ExifMetadata | null> {
   try {
     const parsed = await parseExif(file, {
       tiff: true,

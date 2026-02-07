@@ -123,7 +123,7 @@ function getExifSourceLabel(
 
 function buildGoogleMapsEmbedUrl(location: ExifLocation): string {
   const coordinates = `${location.latitude.toFixed(6)},${location.longitude.toFixed(6)}`;
-  return `https://maps.google.com/maps?q=${encodeURIComponent(coordinates)}&z=15&output=embed`;
+  return `https://www.google.com/maps?q=${encodeURIComponent(coordinates)}&z=15&output=embed`;
 }
 
 function buildExtractionDownloadName(

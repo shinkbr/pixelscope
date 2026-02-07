@@ -1,5 +1,6 @@
 import type { DecodedImage } from "../types";
 import { readExifMetadata } from "./exif";
+import { extractTrailingData } from "./trailingData";
 
 const MAX_PIXELS = 24_000_000;
 
@@ -119,6 +120,14 @@ export async function decodeImageFile(file: File): Promise<DecodedImage> {
     imageData = await decodeWithImageElement(file);
   }
 
+  let trailingData: DecodedImage["trailingData"] = null;
+  try {
+    const sourceBytes = new Uint8Array(await file.arrayBuffer());
+    trailingData = extractTrailingData(sourceBytes, format);
+  } catch {
+    trailingData = null;
+  }
+
   return {
     filename: file.name,
     format,
@@ -127,5 +136,6 @@ export async function decodeImageFile(file: File): Promise<DecodedImage> {
     height: imageData.height,
     imageData,
     exif,
+    trailingData,
   };
 }

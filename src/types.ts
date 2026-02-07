@@ -17,6 +17,12 @@ export interface ExifMetadata {
   entries: ExifEntry[];
 }
 
+export interface TrailingData {
+  containerEndOffset: number;
+  byteLength: number;
+  bytes: Uint8Array;
+}
+
 export interface BitExtractionOptions {
   scanOrder: ExtractionScanOrder;
   channelOrder: ExtractionChannelOrder;
@@ -32,6 +38,7 @@ export interface DecodedImage {
   height: number;
   imageData: ImageData;
   exif: ExifMetadata | null;
+  trailingData: TrailingData | null;
 }
 
 export interface PlaneSpec {

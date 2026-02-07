@@ -47,11 +47,12 @@ const BYTE_PACK_OPTIONS: Array<{ value: ExtractionBytePackOrder; label: string }
   { value: "lsb-first", label: "Byte LSB first" },
 ];
 
-type AnalyzerTab = "bit-planes" | "exif";
+type AnalyzerTab = "bit-planes" | "exif" | "trailing-data";
 
 const ANALYZER_TABS: Array<{ id: AnalyzerTab; label: string }> = [
   { id: "bit-planes", label: "Bit-Plane Navigator" },
   { id: "exif", label: "Exif" },
+  { id: "trailing-data", label: "Trailing data" },
 ];
 
 const EXIF_GROUP_ORDER: ExifGroup[] = ["ifd0", "exif", "gps", "interop", "ifd1"];
@@ -81,6 +82,11 @@ function buildExtractionDownloadName(
   return `${baseName}_${selectionPart}_${options.scanOrder}_${options.channelOrder}_${options.bitOrder}_${options.bytePackOrder}.bin`;
 }
 
+function buildTrailingDataDownloadName(sourceFileName: string): string {
+  const baseName = sourceFileName.replace(/\.[^.]+$/, "") || "image";
+  return `${baseName}_trailing.bin`;
+}
+
 function App() {
   const [decoded, setDecoded] = useState<DecodedImage | null>(null);
   const [selectedPlaneIds, setSelectedPlaneIds] = useState<string[]>([PLANE_SPECS[0].id]);
@@ -90,6 +96,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AnalyzerTab>("bit-planes");
+  const [skipLeadingNullBytes, setSkipLeadingNullBytes] = useState(false);
 
   const planeCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const planeStripRef = useRef<HTMLDivElement | null>(null);
@@ -143,6 +150,42 @@ function App() {
       entries: decoded.exif?.entries.filter((entry) => entry.group === group) ?? [],
     })).filter((group) => group.entries.length > 0);
   }, [decoded]);
+
+  const trailingDataView = useMemo(() => {
+    if (!decoded?.trailingData) {
+      return null;
+    }
+
+    let skippedLeadingNullBytes = 0;
+    if (skipLeadingNullBytes) {
+      while (
+        skippedLeadingNullBytes < decoded.trailingData.bytes.length &&
+        decoded.trailingData.bytes[skippedLeadingNullBytes] === 0x00
+      ) {
+        skippedLeadingNullBytes += 1;
+      }
+    }
+
+    const bytes = decoded.trailingData.bytes.slice(skippedLeadingNullBytes);
+    return {
+      bytes,
+      byteLength: bytes.length,
+      startOffset: decoded.trailingData.containerEndOffset + skippedLeadingNullBytes,
+      skippedLeadingNullBytes,
+    };
+  }, [decoded, skipLeadingNullBytes]);
+
+  const trailingDataHexDump = useMemo(() => {
+    if (!trailingDataView) {
+      return null;
+    }
+
+    return buildHexDump(
+      trailingDataView.bytes.slice(0, HEX_DUMP_MAX_BYTES),
+      trailingDataView.byteLength,
+      trailingDataView.byteLength * 8,
+    );
+  }, [trailingDataView]);
 
   const resetState = useCallback(() => {
     setDecoded(null);
@@ -253,6 +296,28 @@ function App() {
       URL.revokeObjectURL(objectUrl);
     }
   }, [decoded, extractionOptions, selectedPlanes]);
+
+  const downloadTrailingData = useCallback(() => {
+    if (!decoded || !trailingDataView || trailingDataView.byteLength === 0) {
+      return;
+    }
+
+    const payload = new Uint8Array(trailingDataView.bytes.byteLength);
+    payload.set(trailingDataView.bytes);
+    const blob = new Blob([payload], { type: "application/octet-stream" });
+    const objectUrl = URL.createObjectURL(blob);
+
+    try {
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = buildTrailingDataDownloadName(decoded.filename);
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }, [decoded, trailingDataView]);
 
   useEffect(() => {
     if (!planeCanvasRef.current) {
@@ -642,7 +707,7 @@ function App() {
                 </article>
               </section>
             </div>
-          ) : (
+          ) : activeTab === "exif" ? (
             <section className="rounded-2xl border border-clay bg-white/95 p-5 shadow-panel">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <h2 className="text-lg font-semibold text-ink">Exif Metadata</h2>
@@ -688,6 +753,104 @@ function App() {
                       </dl>
                     </article>
                   ))}
+                </div>
+              )}
+            </section>
+          ) : (
+            <section className="rounded-2xl border border-clay bg-white/95 p-5 shadow-panel">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold text-ink">Trailing Data</h2>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="inline-flex items-center gap-2 text-xs font-medium text-ink/80">
+                    <input
+                      type="checkbox"
+                      checked={skipLeadingNullBytes}
+                      onChange={(event) => setSkipLeadingNullBytes(event.target.checked)}
+                      disabled={!decoded?.trailingData}
+                      className="h-4 w-4 rounded border-clay text-accent focus:ring-accent disabled:opacity-45"
+                    />
+                    <span>Skip leading null bytes</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={downloadTrailingData}
+                    disabled={!trailingDataView || trailingDataView.byteLength === 0}
+                    className="rounded-lg border border-clay px-3 py-2 text-xs font-medium text-ink transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    Download extracted data
+                  </button>
+                </div>
+              </div>
+
+              {!decoded ? (
+                <div className="grid h-48 place-items-center rounded-xl border border-clay bg-white text-sm text-ink/60">
+                  Upload an image to inspect trailing data.
+                </div>
+              ) : !decoded.trailingData ? (
+                <div className="grid h-48 place-items-center rounded-xl border border-clay bg-white text-sm text-ink/60">
+                  No trailing data found after the image EOF marker.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid gap-2 rounded-xl border border-clay bg-white p-4 text-sm text-ink/75 md:grid-cols-2">
+                    <p>
+                      EOF offset:{" "}
+                      <span className="font-mono text-xs text-ink">
+                        {decoded.trailingData.containerEndOffset.toLocaleString()} (0x
+                        {decoded.trailingData.containerEndOffset.toString(16).toUpperCase()})
+                      </span>
+                    </p>
+                    <p className="md:text-right">
+                      Trailing bytes:{" "}
+                      <span className="font-medium text-ink">
+                        {trailingDataView?.byteLength.toLocaleString() ?? "0"} (
+                        {formatBytes(trailingDataView?.byteLength ?? 0)})
+                      </span>
+                    </p>
+                    {skipLeadingNullBytes && trailingDataView && trailingDataView.skippedLeadingNullBytes > 0 ? (
+                      <p>
+                        Skipped null prefix:{" "}
+                        <span className="font-medium text-ink">
+                          {trailingDataView.skippedLeadingNullBytes.toLocaleString()} bytes
+                        </span>
+                      </p>
+                    ) : (
+                      <p />
+                    )}
+                    <p>
+                      File size: <span className="font-medium text-ink">{decoded.byteSize.toLocaleString()} bytes</span>
+                    </p>
+                    <p className="md:text-right">
+                      Range:{" "}
+                      <span className="font-mono text-xs text-ink">
+                        {trailingDataView && trailingDataView.byteLength > 0
+                          ? `${trailingDataView.startOffset.toLocaleString()} - ${(decoded.byteSize - 1).toLocaleString()}`
+                          : "None"}
+                      </span>
+                    </p>
+                  </div>
+
+                  {trailingDataHexDump ? (
+                    <div className="grid grid-cols-2 gap-2 text-xs text-ink/70">
+                      <p>Total bits: {trailingDataHexDump.totalBits.toLocaleString()}</p>
+                      <p className="text-right">Total bytes: {trailingDataHexDump.totalBytes.toLocaleString()}</p>
+                      <p className="text-right col-span-2">
+                        {trailingDataHexDump.isTruncated
+                          ? `Hex preview truncated to ${HEX_DUMP_MAX_BYTES.toLocaleString()} bytes`
+                          : "Full trailing data shown"}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  <div className="overflow-auto rounded-xl border border-clay bg-white p-2">
+                    {trailingDataHexDump && trailingDataHexDump.shownBytes > 0 ? (
+                      <pre className="font-mono text-[11px] leading-relaxed text-ink/90">{trailingDataHexDump.text}</pre>
+                    ) : (
+                      <div className="grid h-32 place-items-center text-sm text-ink/60">
+                        {skipLeadingNullBytes ? "No trailing bytes remain after skipping null prefix." : "Trailing data is empty."}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </section>

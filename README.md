@@ -48,6 +48,7 @@ npm run preview
 ```bash
 npm run lint
 npm run typecheck
+npm run test
 ```
 
 ## Technical notes

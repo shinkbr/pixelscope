@@ -1,0 +1,16 @@
+{
+    "name": "web-stego",
+    "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+    "forwardPorts": [4173, 5173],
+    "portsAttributes": {
+        "4173": {
+            "label": "Vite Preview Server",
+            "onAutoForward": "notify"
+        },
+        "5173": {
+            "label": "Vite Dev Server",
+            "onAutoForward": "notify"
+        }
+    },
+    "postCreateCommand": "npm install"
+}

@@ -8,6 +8,10 @@
   color-scheme: light;
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: rgba(11, 127, 99, 0.35) transparent;
@@ -16,6 +20,7 @@
 body {
   margin: 0;
   min-height: 100vh;
+  overflow-y: scroll;
   background:
     radial-gradient(circle at 15% 10%, rgba(11, 127, 99, 0.1), transparent 40%),
     radial-gradient(

@@ -1439,7 +1439,8 @@ function App() {
                                   title="EXIF GPS location map"
                                   src={exifMapEmbedUrl}
                                   loading="lazy"
-                                  referrerPolicy="no-referrer-when-downgrade"
+                                  referrerPolicy="no-referrer"
+                                  sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
                                   className="h-72 w-full"
                                 />
                               </div>

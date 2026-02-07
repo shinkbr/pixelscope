@@ -209,6 +209,7 @@ function transformViewImageData(
 
 function App() {
   const [decoded, setDecoded] = useState<DecodedImage | null>(null);
+  const [activeFrameIndex, setActiveFrameIndex] = useState(0);
   const [selectedPlaneIds, setSelectedPlaneIds] = useState<string[]>([
     PLANE_SPECS[0].id,
   ]);
@@ -246,6 +247,14 @@ function App() {
     [activePlane.id],
   );
 
+  const totalFrames = decoded?.frames.length ?? 0;
+  const clampedFrameIndex =
+    totalFrames > 0 ? Math.min(activeFrameIndex, totalFrames - 1) : 0;
+  const activeFrame = decoded?.frames[clampedFrameIndex] ?? null;
+  const analysisImageData =
+    activeFrame?.imageData ?? decoded?.imageData ?? null;
+  const activeFrameDurationMs = activeFrame?.durationMs ?? null;
+
   const selectionLabel = useMemo(() => {
     if (selectedPlanes.length === 0) {
       return "No selection";
@@ -257,12 +266,12 @@ function App() {
   }, [selectedPlanes]);
 
   const hexDumpView = useMemo(() => {
-    if (!decoded || selectedPlanes.length === 0) {
+    if (!analysisImageData || selectedPlanes.length === 0) {
       return null;
     }
 
     const extracted = extractBitPlaneStream(
-      decoded.imageData,
+      analysisImageData,
       selectedPlanes,
       extractionOptions,
       HEX_DUMP_MAX_BYTES,
@@ -276,7 +285,7 @@ function App() {
       ...hexDump,
       bitsPerPixel: extracted.bitsPerPixel,
     };
-  }, [decoded, extractionOptions, selectedPlanes]);
+  }, [analysisImageData, extractionOptions, selectedPlanes]);
 
   const exifGroups = useMemo(() => {
     if (!decoded?.exif?.entries.length) {
@@ -329,6 +338,7 @@ function App() {
 
   const resetState = useCallback(() => {
     setDecoded(null);
+    setActiveFrameIndex(0);
     setSelectedPlaneIds([PLANE_SPECS[0].id]);
     setActivePlaneId(PLANE_SPECS[0].id);
     setActiveTab("view");
@@ -343,6 +353,7 @@ function App() {
     try {
       const result = await decodeImageFile(file);
       setDecoded(result);
+      setActiveFrameIndex(0);
       setSelectedPlaneIds([PLANE_SPECS[0].id]);
       setActivePlaneId(PLANE_SPECS[0].id);
       setActiveTab("view");
@@ -354,6 +365,7 @@ function App() {
           : "Unable to process this image.";
       setError(message);
       setDecoded(null);
+      setActiveFrameIndex(0);
       setSelectedPlaneIds([PLANE_SPECS[0].id]);
       setActivePlaneId(PLANE_SPECS[0].id);
       setActiveTab("view");
@@ -419,12 +431,12 @@ function App() {
   }, []);
 
   const downloadHexDumpData = useCallback(() => {
-    if (!decoded || selectedPlanes.length === 0) {
+    if (!decoded || !analysisImageData || selectedPlanes.length === 0) {
       return;
     }
 
     const extracted = extractBitPlaneStream(
-      decoded.imageData,
+      analysisImageData,
       selectedPlanes,
       extractionOptions,
       Number.MAX_SAFE_INTEGER,
@@ -448,7 +460,7 @@ function App() {
     } finally {
       URL.revokeObjectURL(objectUrl);
     }
-  }, [decoded, extractionOptions, selectedPlanes]);
+  }, [analysisImageData, decoded, extractionOptions, selectedPlanes]);
 
   const downloadTrailingData = useCallback(() => {
     if (!decoded || !trailingDataView || trailingDataView.byteLength === 0) {
@@ -487,6 +499,21 @@ function App() {
     });
   }, []);
 
+  const moveFrame = useCallback(
+    (step: 1 | -1) => {
+      if (!decoded || decoded.frames.length <= 1) {
+        return;
+      }
+
+      setActiveFrameIndex((current) => {
+        const frameCount = decoded.frames.length;
+        const normalized = (current + step + frameCount * 4) % frameCount;
+        return normalized;
+      });
+    },
+    [decoded],
+  );
+
   useEffect(() => {
     if (!viewCanvasRef.current) {
       return;
@@ -498,19 +525,19 @@ function App() {
       return;
     }
 
-    if (!decoded) {
+    if (!analysisImageData) {
       context.clearRect(0, 0, canvas.width, canvas.height);
       return;
     }
 
     const transformedImageData = transformViewImageData(
-      decoded.imageData,
+      analysisImageData,
       viewMode,
     );
     canvas.width = transformedImageData.width;
     canvas.height = transformedImageData.height;
     context.putImageData(transformedImageData, 0, 0);
-  }, [activeTab, decoded, viewMode]);
+  }, [activeTab, analysisImageData, viewMode]);
 
   useEffect(() => {
     if (!planeCanvasRef.current) {
@@ -523,20 +550,20 @@ function App() {
       return;
     }
 
-    if (!decoded || selectedPlanes.length === 0) {
+    if (!analysisImageData || selectedPlanes.length === 0) {
       context.clearRect(0, 0, canvas.width, canvas.height);
       return;
     }
 
     const planeImageData =
       selectedPlanes.length === 1
-        ? extractBitPlane(decoded.imageData, selectedPlanes[0])
-        : extractCombinedBitPlanes(decoded.imageData, selectedPlanes);
+        ? extractBitPlane(analysisImageData, selectedPlanes[0])
+        : extractCombinedBitPlanes(analysisImageData, selectedPlanes);
 
     canvas.width = planeImageData.width;
     canvas.height = planeImageData.height;
     context.putImageData(planeImageData, 0, 0);
-  }, [activeTab, decoded, selectedPlanes]);
+  }, [activeTab, analysisImageData, selectedPlanes]);
 
   useEffect(() => {
     if (!planeStripRef.current) {
@@ -591,10 +618,10 @@ function App() {
           >
             <input
               type="file"
-              accept="image/jpeg,image/png"
+              accept="image/jpeg,image/png,image/webp,image/bmp,image/tiff,image/gif"
               className="sr-only"
               onChange={handleInput}
-              aria-label="Upload PNG or JPEG image"
+              aria-label="Upload supported image file"
             />
 
             <span className="rounded-full bg-accentSoft px-4 py-1 font-mono text-xs uppercase tracking-[0.16em] text-accent">
@@ -604,7 +631,7 @@ function App() {
               Drop image here or click to browse
             </p>
             <p className="mt-2 text-sm text-ink/70">
-              Supported formats: PNG, JPEG
+              Supported formats: PNG, JPEG, WebP, BMP, TIFF, GIF
             </p>
             {isLoading ? (
               <p className="mt-4 font-mono text-sm text-accent">
@@ -634,18 +661,80 @@ function App() {
 
                 <dt className="text-ink/70">Dimensions</dt>
                 <dd className="text-right font-medium text-ink">
-                  {decoded.width.toLocaleString()} x{" "}
-                  {decoded.height.toLocaleString()}
+                  {(analysisImageData?.width ?? decoded.width).toLocaleString()}{" "}
+                  x{" "}
+                  {(
+                    analysisImageData?.height ?? decoded.height
+                  ).toLocaleString()}
                 </dd>
 
                 <dt className="text-ink/70">Total planes</dt>
                 <dd className="text-right font-medium text-ink">
                   {PLANE_SPECS.length}
                 </dd>
+
+                <dt className="text-ink/70">Frames</dt>
+                <dd className="text-right font-medium text-ink">
+                  {totalFrames.toLocaleString()}
+                </dd>
               </dl>
             ) : (
               <p className="mt-4 text-sm text-ink/70">No image loaded.</p>
             )}
+
+            {decoded && totalFrames > 1 ? (
+              <div className="mt-4 rounded-xl border border-clay bg-paper/30 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink/70">
+                    Frame {clampedFrameIndex + 1} of {totalFrames}
+                  </p>
+                  <p className="text-xs text-ink/60">
+                    {activeFrameDurationMs === null
+                      ? "Delay: unknown"
+                      : `Delay: ${activeFrameDurationMs} ms`}
+                  </p>
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg border border-clay px-2 py-1 text-xs font-medium text-ink transition hover:border-accent hover:text-accent"
+                    onClick={() => moveFrame(-1)}
+                  >
+                    Prev frame
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-clay px-2 py-1 text-xs font-medium text-ink transition hover:border-accent hover:text-accent"
+                    onClick={() => moveFrame(1)}
+                  >
+                    Next frame
+                  </button>
+                  <label className="ml-auto flex items-center gap-2 text-xs text-ink/70">
+                    <span>Jump</span>
+                    <select
+                      value={clampedFrameIndex}
+                      onChange={(event) =>
+                        setActiveFrameIndex(Number(event.target.value))
+                      }
+                      className="rounded-md border border-clay bg-white px-2 py-1 text-xs text-ink"
+                    >
+                      {decoded.frames.map((_, frameIndex) => (
+                        <option key={frameIndex} value={frameIndex}>
+                          Frame {frameIndex + 1}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+            ) : null}
+
+            {decoded?.format === "image/gif" && totalFrames === 1 ? (
+              <p className="mt-3 text-xs text-ink/65">
+                GIF frame-level decoding is unavailable in this browser, so
+                analysis uses the first frame.
+              </p>
+            ) : null}
 
             <div className="mt-5 flex flex-wrap gap-2">
               <button

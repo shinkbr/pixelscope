@@ -115,6 +115,7 @@ test("decodeImageFile decodes with createImageBitmap when available", async () =
   expect(decoded.format).toBe("image/png");
   expect(decoded.width).toBe(2);
   expect(decoded.height).toBe(1);
+  expect(decoded.frames).toHaveLength(1);
   expect(decoded.byteSize).toBe(5);
   expect(decoded.exif?.entries[0]?.value).toBe("Canon");
   expect(decoded.trailingData?.byteLength).toBe(1);
@@ -143,12 +144,52 @@ test("decodeImageFile falls back to image element when createImageBitmap fails",
   expect(decoded.format).toBe("image/jpeg");
   expect(decoded.width).toBe(3);
   expect(decoded.height).toBe(2);
+  expect(decoded.frames).toHaveLength(1);
   expect(decoded.exif).toBeNull();
   expect(decoded.trailingData).toBeNull();
   expect(
     globalThis.URL.revokeObjectURL as ReturnType<typeof vi.fn>,
   ).toHaveBeenCalledWith("blob:test");
 });
+
+test.each([
+  {
+    fileName: "sample.webp",
+    mimeType: "image/webp",
+    expectedFormat: "image/webp",
+  },
+  {
+    fileName: "sample.bmp",
+    mimeType: "image/x-ms-bmp",
+    expectedFormat: "image/bmp",
+  },
+  {
+    fileName: "sample.tiff",
+    mimeType: "image/tiff",
+    expectedFormat: "image/tiff",
+  },
+  {
+    fileName: "sample.gif",
+    mimeType: "image/gif",
+    expectedFormat: "image/gif",
+  },
+])(
+  "decodeImageFile supports format $expectedFormat",
+  async ({ fileName, mimeType, expectedFormat }) => {
+    installCanvas(1, 1);
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn(async () => ({ width: 1, height: 1, close: vi.fn() })),
+    );
+    const file = new File([new Uint8Array([1])], fileName, {
+      type: mimeType,
+    });
+
+    const decoded = await decodeImageFile(file);
+
+    expect(decoded.format).toBe(expectedFormat);
+  },
+);
 
 test("decodeImageFile accepts extension-based format when MIME type is empty", async () => {
   installCanvas(1, 1);
@@ -162,6 +203,62 @@ test("decodeImageFile accepts extension-based format when MIME type is empty", a
   const decoded = await decodeImageFile(file);
 
   expect(decoded.format).toBe("image/jpeg");
+});
+
+test("decodeImageFile decodes GIF frames with ImageDecoder when available", async () => {
+  installCanvas(2, 1);
+  const frameA = {
+    displayWidth: 2,
+    displayHeight: 1,
+    duration: 40_000,
+    close: vi.fn(),
+  };
+  const frameB = {
+    displayWidth: 2,
+    displayHeight: 1,
+    duration: 80_000,
+    close: vi.fn(),
+  };
+  class MockImageDecoder {
+    public static instances: MockImageDecoder[] = [];
+    public tracks = {
+      selectedTrack: {
+        frameCount: 2,
+      },
+    };
+    public close = vi.fn();
+    public decode = vi.fn(async (options?: { frameIndex?: number }) => ({
+      image: options?.frameIndex === 1 ? frameB : frameA,
+    }));
+
+    constructor() {
+      MockImageDecoder.instances.push(this);
+    }
+  }
+
+  const createImageBitmapMock = vi.fn(async () => {
+    throw new Error("createImageBitmap should not be used for multi-frame GIF");
+  });
+  vi.stubGlobal("createImageBitmap", createImageBitmapMock);
+  vi.stubGlobal("ImageDecoder", MockImageDecoder);
+
+  const file = new File([new Uint8Array([0x47, 0x49, 0x46])], "animated.gif", {
+    type: "image/gif",
+  });
+
+  const decoded = await decodeImageFile(file);
+
+  expect(decoded.format).toBe("image/gif");
+  expect(decoded.frames).toHaveLength(2);
+  expect(decoded.frames[0]?.durationMs).toBe(40);
+  expect(decoded.frames[1]?.durationMs).toBe(80);
+  expect(decoded.width).toBe(2);
+  expect(decoded.height).toBe(1);
+  expect(createImageBitmapMock).not.toHaveBeenCalled();
+  expect(frameA.close).toHaveBeenCalledTimes(1);
+  expect(frameB.close).toHaveBeenCalledTimes(1);
+  expect(MockImageDecoder.instances[0]?.decode).toHaveBeenCalledTimes(2);
+  expect(MockImageDecoder.instances[0]?.close).toHaveBeenCalledTimes(1);
 });
 
 test("decodeImageFile throws for unsupported file type", async () => {

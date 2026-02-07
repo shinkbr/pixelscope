@@ -4,6 +4,13 @@ export type ExtractionChannelOrder = "rgba" | "bgra" | "argb" | "abgr";
 export type ExtractionBitOrder = "lsb-to-msb" | "msb-to-lsb";
 export type ExtractionBytePackOrder = "msb-first" | "lsb-first";
 export type ExifGroup = "ifd0" | "exif" | "gps" | "interop" | "ifd1";
+export type SupportedImageFormat =
+  | "image/jpeg"
+  | "image/png"
+  | "image/webp"
+  | "image/bmp"
+  | "image/tiff"
+  | "image/gif";
 
 export interface ExifEntry {
   group: ExifGroup;
@@ -30,13 +37,19 @@ export interface BitExtractionOptions {
   bytePackOrder: ExtractionBytePackOrder;
 }
 
+export interface ImageFrame {
+  imageData: ImageData;
+  durationMs: number | null;
+}
+
 export interface DecodedImage {
   filename: string;
-  format: "image/jpeg" | "image/png";
+  format: SupportedImageFormat;
   byteSize: number;
   width: number;
   height: number;
   imageData: ImageData;
+  frames: ImageFrame[];
   exif: ExifMetadata | null;
   trailingData: TrailingData | null;
 }

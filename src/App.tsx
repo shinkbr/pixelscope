@@ -19,6 +19,10 @@ import {
 import { formatBytes } from "./utils/format";
 import { buildHexDump } from "./utils/hexDump";
 import { decodeImageFile } from "./utils/image";
+import {
+  detectCarvedPayloads,
+  type CarvedPayload,
+} from "./utils/payloadCarving";
 
 const PLANE_SPECS = buildPlaneSpecs();
 const CHANNEL_ROWS: PlaneSpec["channelLabel"][] = [
@@ -28,6 +32,7 @@ const CHANNEL_ROWS: PlaneSpec["channelLabel"][] = [
   "Alpha",
 ];
 const HEX_DUMP_MAX_BYTES = 8192;
+const PAYLOAD_SCAN_MAX_BYTES = 4 * 1024 * 1024;
 const DEFAULT_EXTRACTION_OPTIONS: BitExtractionOptions = {
   scanOrder: "row-major",
   channelOrder: "rgba",
@@ -132,6 +137,25 @@ function buildExtractionDownloadName(
 function buildTrailingDataDownloadName(sourceFileName: string): string {
   const baseName = sourceFileName.replace(/\.[^.]+$/, "") || "image";
   return `${baseName}_trailing.bin`;
+}
+
+function formatHexOffset(offset: number): string {
+  return `0x${offset.toString(16).toUpperCase()}`;
+}
+
+function buildCarvedPayloadDownloadName(
+  sourceFileName: string,
+  sourceLabel: "bitstream" | "trailing",
+  payload: CarvedPayload,
+  absoluteStartOffset?: number,
+): string {
+  const baseName = sourceFileName.replace(/\.[^.]+$/, "") || "image";
+  const startOffset =
+    absoluteStartOffset === undefined
+      ? payload.startOffset
+      : absoluteStartOffset;
+  const offsetPart = startOffset.toString(16).toUpperCase().padStart(8, "0");
+  return `${baseName}_${sourceLabel}_${payload.kind}_${offsetPart}.${payload.extension}`;
 }
 
 function transformViewImageData(
@@ -287,6 +311,26 @@ function App() {
     };
   }, [analysisImageData, extractionOptions, selectedPlanes]);
 
+  const bitPlanePayloadCarving = useMemo(() => {
+    if (!analysisImageData || selectedPlanes.length === 0) {
+      return null;
+    }
+
+    const extracted = extractBitPlaneStream(
+      analysisImageData,
+      selectedPlanes,
+      extractionOptions,
+      PAYLOAD_SCAN_MAX_BYTES,
+    );
+    return {
+      bytes: extracted.bytes,
+      payloads: detectCarvedPayloads(extracted.bytes),
+      scannedBytes: extracted.bytes.length,
+      totalBytes: extracted.totalBytes,
+      isScanTruncated: extracted.bytes.length < extracted.totalBytes,
+    };
+  }, [analysisImageData, extractionOptions, selectedPlanes]);
+
   const exifGroups = useMemo(() => {
     if (!decoded?.exif?.entries.length) {
       return [];
@@ -334,6 +378,25 @@ function App() {
       trailingDataView.byteLength,
       trailingDataView.byteLength * 8,
     );
+  }, [trailingDataView]);
+
+  const trailingPayloadCarving = useMemo(() => {
+    if (!trailingDataView) {
+      return null;
+    }
+
+    const scannedBytes = trailingDataView.bytes.slice(
+      0,
+      PAYLOAD_SCAN_MAX_BYTES,
+    );
+    return {
+      bytes: scannedBytes,
+      payloads: detectCarvedPayloads(scannedBytes),
+      scannedBytes: scannedBytes.length,
+      totalBytes: trailingDataView.byteLength,
+      startOffset: trailingDataView.startOffset,
+      isScanTruncated: scannedBytes.length < trailingDataView.byteLength,
+    };
   }, [trailingDataView]);
 
   const resetState = useCallback(() => {
@@ -483,6 +546,79 @@ function App() {
       URL.revokeObjectURL(objectUrl);
     }
   }, [decoded, trailingDataView]);
+
+  const downloadBitPlaneCarvedPayload = useCallback(
+    (payload: CarvedPayload) => {
+      if (!decoded || !bitPlanePayloadCarving) {
+        return;
+      }
+
+      const carvedBytes = bitPlanePayloadCarving.bytes.slice(
+        payload.startOffset,
+        payload.endOffset,
+      );
+      if (carvedBytes.length === 0) {
+        return;
+      }
+
+      const blob = new Blob([carvedBytes], { type: payload.mimeType });
+      const objectUrl = URL.createObjectURL(blob);
+
+      try {
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = buildCarvedPayloadDownloadName(
+          decoded.filename,
+          "bitstream",
+          payload,
+        );
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    },
+    [bitPlanePayloadCarving, decoded],
+  );
+
+  const downloadTrailingCarvedPayload = useCallback(
+    (payload: CarvedPayload) => {
+      if (!decoded || !trailingPayloadCarving) {
+        return;
+      }
+
+      const carvedBytes = trailingPayloadCarving.bytes.slice(
+        payload.startOffset,
+        payload.endOffset,
+      );
+      if (carvedBytes.length === 0) {
+        return;
+      }
+
+      const blob = new Blob([carvedBytes], { type: payload.mimeType });
+      const objectUrl = URL.createObjectURL(blob);
+      const absoluteStartOffset =
+        trailingPayloadCarving.startOffset + payload.startOffset;
+
+      try {
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = buildCarvedPayloadDownloadName(
+          decoded.filename,
+          "trailing",
+          payload,
+          absoluteStartOffset,
+        );
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    },
+    [decoded, trailingPayloadCarving],
+  );
 
   const cycleViewMode = useCallback((step: 1 | -1) => {
     setViewMode((current) => {
@@ -1116,6 +1252,97 @@ function App() {
                         </div>
                       )}
                     </div>
+
+                    <div className="mt-4 rounded-xl border border-clay bg-paper/35 p-3">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <h4 className="text-sm font-semibold text-ink">
+                          Payload Carving
+                        </h4>
+                        <span className="rounded-full bg-accentSoft px-2 py-1 font-mono text-[11px] uppercase tracking-[0.08em] text-accent">
+                          {bitPlanePayloadCarving
+                            ? `${bitPlanePayloadCarving.payloads.length} match${bitPlanePayloadCarving.payloads.length === 1 ? "" : "es"}`
+                            : "0 matches"}
+                        </span>
+                      </div>
+
+                      {bitPlanePayloadCarving &&
+                      bitPlanePayloadCarving.isScanTruncated ? (
+                        <p className="mb-2 text-xs text-ink/65">
+                          Scanned first{" "}
+                          {bitPlanePayloadCarving.scannedBytes.toLocaleString()}{" "}
+                          bytes of{" "}
+                          {bitPlanePayloadCarving.totalBytes.toLocaleString()}.
+                        </p>
+                      ) : null}
+
+                      {!decoded ? (
+                        <p className="text-sm text-ink/60">
+                          Upload an image to carve candidate payloads.
+                        </p>
+                      ) : selectedPlanes.length === 0 ? (
+                        <p className="text-sm text-ink/60">
+                          Select one or more planes to carve detected payload
+                          signatures.
+                        </p>
+                      ) : !bitPlanePayloadCarving ||
+                        bitPlanePayloadCarving.payloads.length === 0 ? (
+                        <p className="text-sm text-ink/60">
+                          No known file signatures detected in the scanned
+                          extracted stream.
+                        </p>
+                      ) : (
+                        <div className="max-h-60 space-y-2 overflow-auto pr-1">
+                          {bitPlanePayloadCarving.payloads.map((payload) => {
+                            const endsAtScanBoundary =
+                              bitPlanePayloadCarving.isScanTruncated &&
+                              payload.endOffset ===
+                                bitPlanePayloadCarving.scannedBytes;
+
+                            return (
+                              <article
+                                key={payload.id}
+                                className="rounded-lg border border-clay bg-white px-3 py-2"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm font-medium text-ink">
+                                      {payload.label}
+                                    </p>
+                                    <p className="font-mono text-[11px] text-ink/70">
+                                      {payload.kind.toUpperCase()} |{" "}
+                                      {formatBytes(payload.byteLength)} |{" "}
+                                      {payload.startOffset.toLocaleString()} (
+                                      {formatHexOffset(payload.startOffset)}) -
+                                      {payload.endOffset.toLocaleString()} (
+                                      {formatHexOffset(payload.endOffset)})
+                                    </p>
+                                    <p className="text-[11px] text-ink/60">
+                                      Signature: {payload.signature} | Method:{" "}
+                                      {payload.strategy}
+                                    </p>
+                                    <p className="text-[11px] text-ink/60">
+                                      Confidence: {payload.confidence}
+                                      {endsAtScanBoundary
+                                        ? " (may be scan-truncated)"
+                                        : ""}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      downloadBitPlaneCarvedPayload(payload)
+                                    }
+                                    className="rounded-lg border border-clay px-3 py-2 text-xs font-medium text-ink transition hover:border-accent hover:text-accent"
+                                  >
+                                    Carve
+                                  </button>
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </article>
                 </section>
               </div>
@@ -1298,6 +1525,101 @@ function App() {
                           {skipLeadingNullBytes
                             ? "No trailing bytes remain after skipping null prefix."
                             : "Trailing data is empty."}
+                        </div>
+                      )}
+                    </div>
+                    <div className="rounded-xl border border-clay bg-paper/35 p-3">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <h4 className="text-sm font-semibold text-ink">
+                          Payload Carving
+                        </h4>
+                        <span className="rounded-full bg-accentSoft px-2 py-1 font-mono text-[11px] uppercase tracking-[0.08em] text-accent">
+                          {trailingPayloadCarving
+                            ? `${trailingPayloadCarving.payloads.length} match${trailingPayloadCarving.payloads.length === 1 ? "" : "es"}`
+                            : "0 matches"}
+                        </span>
+                      </div>
+
+                      {trailingPayloadCarving &&
+                      trailingPayloadCarving.isScanTruncated ? (
+                        <p className="mb-2 text-xs text-ink/65">
+                          Scanned first{" "}
+                          {trailingPayloadCarving.scannedBytes.toLocaleString()}{" "}
+                          bytes of{" "}
+                          {trailingPayloadCarving.totalBytes.toLocaleString()}{" "}
+                          trailing bytes.
+                        </p>
+                      ) : null}
+
+                      {!trailingPayloadCarving ||
+                      trailingPayloadCarving.payloads.length === 0 ? (
+                        <p className="text-sm text-ink/60">
+                          No known file signatures detected in the scanned
+                          trailing stream.
+                        </p>
+                      ) : (
+                        <div className="max-h-60 space-y-2 overflow-auto pr-1">
+                          {trailingPayloadCarving.payloads.map((payload) => {
+                            const endsAtScanBoundary =
+                              trailingPayloadCarving.isScanTruncated &&
+                              payload.endOffset ===
+                                trailingPayloadCarving.scannedBytes;
+                            const absoluteStart =
+                              trailingPayloadCarving.startOffset +
+                              payload.startOffset;
+                            const absoluteEnd =
+                              trailingPayloadCarving.startOffset +
+                              payload.endOffset;
+
+                            return (
+                              <article
+                                key={payload.id}
+                                className="rounded-lg border border-clay bg-white px-3 py-2"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm font-medium text-ink">
+                                      {payload.label}
+                                    </p>
+                                    <p className="font-mono text-[11px] text-ink/70">
+                                      {payload.kind.toUpperCase()} |{" "}
+                                      {formatBytes(payload.byteLength)} | Local{" "}
+                                      {payload.startOffset.toLocaleString()} (
+                                      {formatHexOffset(payload.startOffset)}) -
+                                      {payload.endOffset.toLocaleString()} (
+                                      {formatHexOffset(payload.endOffset)})
+                                    </p>
+                                    <p className="font-mono text-[11px] text-ink/65">
+                                      File offsets:{" "}
+                                      {absoluteStart.toLocaleString()} (
+                                      {formatHexOffset(absoluteStart)}) -{" "}
+                                      {absoluteEnd.toLocaleString()} (
+                                      {formatHexOffset(absoluteEnd)})
+                                    </p>
+                                    <p className="text-[11px] text-ink/60">
+                                      Signature: {payload.signature} | Method:{" "}
+                                      {payload.strategy}
+                                    </p>
+                                    <p className="text-[11px] text-ink/60">
+                                      Confidence: {payload.confidence}
+                                      {endsAtScanBoundary
+                                        ? " (may be scan-truncated)"
+                                        : ""}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      downloadTrailingCarvedPayload(payload)
+                                    }
+                                    className="rounded-lg border border-clay px-3 py-2 text-xs font-medium text-ink transition hover:border-accent hover:text-accent"
+                                  >
+                                    Carve
+                                  </button>
+                                </div>
+                              </article>
+                            );
+                          })}
                         </div>
                       )}
                     </div>

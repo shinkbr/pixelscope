@@ -1,4 +1,4 @@
-# Web Stego: Bit-Plane Analyzer
+# PixelScope
 
 A Vite + React + Tailwind web app for steganography-focused image inspection.
 
@@ -18,6 +18,10 @@ A Vite + React + Tailwind web app for steganography-focused image inspection.
   - Selected bit-plane rendering
   - Hex dump using ordered bit extraction from selected planes
   - Download extracted binary data (`.bin`) for the current selection/settings
+  - Payload carving from extracted stream signatures (carve and download detected files)
+- Trailing data payload carving:
+  - Signature-based detection of embedded files in trailing bytes
+  - Carve and download detected payloads
 - Configurable extraction settings for the Hex Dump:
   - Pixel scan order (`row-major` or `column-major`)
   - Channel traversal order (`RGBA`, `BGRA`, `ARGB`, `ABGR`)
@@ -60,4 +64,5 @@ npm run test
 - Pixel extraction is done with browser `CanvasRenderingContext2D#getImageData`.
 - Each bit-plane is rendered as a binary monochrome image (`white = bit set`, `black = bit not set`).
 - Hex extraction concatenates selected plane bits in configured order, then repacks into bytes.
+- Payload carving inspects scanned extracted/trailing bytes for common file signatures and uses format-aware end detection when available.
 - Hex dump is presented as offset + hex + ASCII, with large dumps truncated for UI performance.

@@ -736,13 +736,31 @@ function App() {
     <div className="min-h-screen">
       <header className="border-b border-clay/80 bg-transparent py-2">
         <div className="mx-auto w-full max-w-7xl px-4 md:px-8">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold leading-tight text-ink md:text-xl">
-              PixelScope
-            </h1>
-            <span className="text-sm text-ink/70 md:text-base">
-              Steganography Toolkit
-            </span>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <h1 className="text-lg font-semibold leading-tight text-ink md:text-xl">
+                PixelScope
+              </h1>
+              <span className="text-sm text-ink/70 md:text-base">
+                Steganography Toolkit
+              </span>
+            </div>
+            <a
+              href="https://github.com/shinkbr/pixelscope"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="View PixelScope repository on GitHub"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-clay bg-white/80 text-ink transition hover:border-accent hover:text-accent"
+            >
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                className="h-5 w-5"
+                fill="currentColor"
+              >
+                <path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.1c-3.34.73-4.04-1.42-4.04-1.42-.55-1.37-1.34-1.73-1.34-1.73-1.1-.74.08-.73.08-.73 1.2.09 1.83 1.2 1.83 1.2 1.08 1.8 2.82 1.28 3.5.98.1-.76.43-1.28.78-1.58-2.67-.3-5.48-1.3-5.48-5.9 0-1.3.47-2.37 1.24-3.2-.13-.3-.54-1.52.12-3.16 0 0 1.02-.32 3.34 1.22a11.9 11.9 0 0 1 6.08 0c2.33-1.54 3.34-1.22 3.34-1.22.66 1.64.25 2.86.12 3.16.77.83 1.24 1.9 1.24 3.2 0 4.61-2.81 5.59-5.49 5.88.44.37.82 1.1.82 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .5Z" />
+              </svg>
+            </a>
           </div>
         </div>
       </header>

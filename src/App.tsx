@@ -908,7 +908,11 @@ function App() {
         ) : null}
 
         <section className="overflow-hidden rounded-2xl border border-clay bg-white/95 shadow-panel">
-          <div className="flex flex-wrap gap-2 border-b border-clay/80 px-4 py-3">
+          <div
+            className="flex flex-wrap gap-1 border-b border-clay/80 px-4 pb-0 pt-3"
+            role="tablist"
+            aria-label="Analyzer sections"
+          >
             {ANALYZER_TABS.map((tab) => {
               const isActive = activeTab === tab.id;
               return (
@@ -917,10 +921,11 @@ function App() {
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
                   aria-selected={isActive}
-                  className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  role="tab"
+                  className={`-mb-px rounded-t-xl border px-3 py-2 text-sm font-medium transition ${
                     isActive
-                      ? "border-accent bg-accent text-white"
-                      : "border-clay text-ink hover:border-accent hover:text-accent"
+                      ? "border-clay border-b-white bg-white text-ink"
+                      : "border-transparent bg-clay/35 text-ink/75 hover:border-clay/70 hover:bg-white/80 hover:text-ink"
                   }`}
                 >
                   {tab.label}

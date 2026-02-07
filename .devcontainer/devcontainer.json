@@ -1,5 +1,5 @@
 {
-  "name": "web-stego",
+  "name": "pixelscope",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
   "forwardPorts": [4173, 5173],
   "portsAttributes": {

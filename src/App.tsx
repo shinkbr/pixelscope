@@ -432,20 +432,21 @@ function App() {
             <p className="mb-3 text-xs text-ink/60">Preview is rendered at native pixel resolution (no CSS downsampling).</p>
           )}
           <div className="overflow-auto rounded-xl border border-clay bg-white p-2">
-            <canvas
-              ref={planeCanvasRef}
-              className="pixelated block rounded-md bg-black/5"
-              aria-label={
-                selectedPlanes.length > 1
-                  ? "Visualized combined bit planes"
-                  : selectedPlanes.length === 1
-                    ? `Visualized ${selectedPlanes[0].label} bit plane`
-                    : "No bit plane selected"
-              }
-            />
-            {!decoded ? (
+            {decoded ? (
+              <canvas
+                ref={planeCanvasRef}
+                className="pixelated block rounded-md bg-black/5"
+                aria-label={
+                  selectedPlanes.length > 1
+                    ? "Visualized combined bit planes"
+                    : selectedPlanes.length === 1
+                      ? `Visualized ${selectedPlanes[0].label} bit plane`
+                      : "No bit plane selected"
+                }
+              />
+            ) : (
               <div className="grid h-40 place-items-center text-sm text-ink/60">Upload an image to render bit-planes.</div>
-            ) : null}
+            )}
           </div>
         </article>
 

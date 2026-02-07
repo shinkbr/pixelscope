@@ -1,110 +1,45 @@
 # AGENTS.md
 
 ## Purpose
+Concrete rules for AI-assisted development in this repository.
 
-This document defines standards for AI-driven software development in this repository. It applies to both human contributors and AI agents.
+## Rules
+1. Keep scope tight.
+Do: change only files required for the task.
+Do not: include unrelated refactors, renames, or formatting-only edits unless requested.
 
-## Core Principles
+2. Verify before editing.
+Do: open and read the target files/functions before changing them.
+Do not: invent APIs, paths, env vars, commands, or test results.
 
-- Prioritize correctness, security, and maintainability over speed.
-- Make small, reversible, well-scoped changes.
-- Prefer explicit assumptions over implicit guesses.
-- Keep behavior stable unless a change is intentionally requested.
-- Treat production data, credentials, and user privacy as high-risk assets.
+3. Preserve current behavior unless asked to change it.
+Do: keep existing defaults and side effects unless requirements say otherwise.
+Do not: silently change runtime behavior, config defaults, or public interfaces.
 
-## Standard Workflow
+4. Add tests for behavior changes.
+Do: add or update at least one automated test for each changed behavior.
+Do not: ship logic changes without tests unless you clearly document why tests are not possible.
 
-1. Understand the task and constraints before editing code.
-2. Inspect relevant code paths, configs, and tests.
-3. Propose or follow a concrete implementation plan.
-4. Implement minimal changes needed to satisfy requirements.
-5. Validate with automated checks and targeted manual verification.
-6. Document decisions, tradeoffs, and follow-up work.
+5. Run checks and report exact commands.
+Do: run the project checks that apply to your change (tests, lint, typecheck/build).
+Do not: say "it works" without listing what command was run and whether it passed.
 
-## Planning and Scope
+6. Handle secrets and sensitive data safely.
+Do: load secrets from environment/config and redact sensitive values in outputs.
+Do not: commit tokens, credentials, private keys, or personal data.
 
-- Define acceptance criteria before implementation.
-- Identify impacted components and potential regressions.
-- Call out unknowns and risks early.
-- Avoid opportunistic refactors unless directly justified.
+7. Update docs when behavior or setup changes.
+Do: update README/config docs when commands, setup steps, APIs, or user-facing behavior change.
+Do not: leave changed workflows undocumented.
 
-## Coding Standards
+8. Escalate uncertainty and high-risk work.
+Do: stop and ask for human confirmation when requirements conflict, data migration is risky, or intent is ambiguous.
+Do not: guess on destructive or high-impact decisions.
 
-- Follow existing repository conventions (naming, architecture, formatting).
-- Prefer readability and explicitness over cleverness.
-- Keep functions/modules focused on a single responsibility.
-- Add comments only where intent is non-obvious.
-- Do not introduce dead code, placeholder logic, or hidden side effects.
-
-## Testing and Validation
-
-- Add or update tests for every behavior change.
-- Run the narrowest useful test set during iteration; run broader suites before completion.
-- Verify edge cases, failure paths, and error handling.
-- Do not claim success without test evidence.
-- If tests cannot run, state why and provide exact commands for maintainers.
-
-## Security and Privacy
-
-- Never hardcode secrets, tokens, or credentials.
-- Validate and sanitize untrusted inputs.
-- Use least-privilege access for integrations and tooling.
-- Prefer parameterized queries and safe defaults.
-- Redact sensitive information from logs, traces, and outputs.
-
-## Dependency and Supply Chain Hygiene
-
-- Minimize new dependencies; justify each addition.
-- Pin or constrain versions according to project policy.
-- Prefer well-maintained, reputable packages.
-- Note licensing and security implications for new dependencies.
-
-## Git and Change Management
-
-- Keep commits focused and atomic.
-- Write clear commit messages explaining what changed and why.
-- Do not rewrite history on shared branches without explicit approval.
-- Avoid unrelated file churn in the same change set.
-
-## Code Review Expectations
-
-- Review for correctness, regressions, security, performance, and maintainability.
-- Include file/line references for findings.
-- Mark severity and required follow-up clearly.
-- Block merges for unresolved high-severity issues.
-
-## Documentation Requirements
-
-- Update relevant docs when behavior, API, config, or operations change.
-- Document assumptions, limitations, and migration steps.
-- Keep runbooks and setup instructions executable and current.
-
-## Observability and Operations
-
-- Ensure new features emit useful logs/metrics/traces where appropriate.
-- Keep alerts actionable with clear ownership and remediation steps.
-- Design for safe rollback and graceful degradation.
-
-## Performance and Reliability
-
-- Define performance expectations for critical paths.
-- Avoid unnecessary allocations, network calls, or blocking operations.
-- Consider concurrency, retries, idempotency, and timeout behavior.
-
-## AI-Specific Guardrails
-
-- Do not fabricate APIs, files, commands, or test results.
-- Verify generated code against local repository reality.
-- State assumptions and confidence when uncertainty exists.
-- Prefer deterministic, auditable steps over opaque automation.
-- Escalate to a human when requirements conflict, risk is high, or intent is ambiguous.
-
-## Definition of Done
-
-A task is complete only when:
-
-- Requirements are implemented and scoped correctly.
-- Relevant tests pass (or limitations are explicitly documented).
-- Security/privacy implications are addressed.
-- Documentation is updated.
-- Outstanding risks and follow-ups are clearly listed.
+## Done Criteria
+A task is done when:
+- Requested requirements are implemented with no unrelated changes.
+- Automated tests/checks were run and commands/results are reported.
+- No secrets or sensitive data were added to code, logs, or docs.
+- README/docs were updated for any behavior/setup/API changes.
+- Any remaining risks or limitations are explicitly listed.

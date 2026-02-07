@@ -655,3 +655,22 @@ export function detectCarvedPayloads(
 
   return matches;
 }
+
+// Exposed for targeted unit tests of parser edge cases.
+export const __payloadCarvingInternals = {
+  matchesAt,
+  readUint16LE,
+  readUint16BE,
+  readUint32LE,
+  readUint32BE,
+  findNextPattern,
+  findPngEnd,
+  findJpegEnd,
+  findGifEnd,
+  findWebpEnd,
+  findBmpEnd,
+  findPdfEnd,
+  findZipEnd,
+  gatherCandidates,
+  findNextCandidateOffset,
+};

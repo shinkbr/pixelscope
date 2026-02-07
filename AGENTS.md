@@ -18,7 +18,7 @@ Do not: ship logic changes without tests unless you clearly document why tests a
 
 3. Run checks and report exact commands.
 
-Do: run the project checks that apply to your change (tests, lint, typecheck/build).
+Do: run `npm run format`, `npm run lint`, `npm run test`, and `npm run build` for changes, and report exact commands/results.
 Do not: say "it works" without listing what command was run and whether it passed.
 
 4. Handle secrets and sensitive data safely.
@@ -41,7 +41,7 @@ Do not: guess on destructive or high-impact decisions.
 A task is done when:
 
 - Requested requirements are implemented with no unrelated changes.
-- Automated tests/checks were run and commands/results are reported.
+- `npm run format`, `npm run lint`, `npm run test`, and `npm run build` were run and commands/results are reported.
 - No secrets or sensitive data were added to code, logs, or docs.
 - README/docs were updated for any behavior/setup/API changes.
 - Any remaining risks or limitations are explicitly listed.

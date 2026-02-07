@@ -17,7 +17,11 @@ import {
   extractBitPlaneStream,
   extractCombinedBitPlanes,
 } from "./utils/bitPlane";
-import { formatBytes } from "./utils/format";
+import {
+  formatByteCountWithHuman,
+  formatBytes,
+  formatCommaGroupedInteger,
+} from "./utils/format";
 import { buildHexDump } from "./utils/hexDump";
 import { decodeImageFile } from "./utils/image";
 import {
@@ -1519,11 +1523,23 @@ function App() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <div className="grid gap-2 rounded-xl border border-clay bg-white p-4 text-sm text-ink/75 md:grid-cols-2">
-                      <p>
-                        EOF offset:{" "}
-                        <span className="font-mono text-xs text-ink">
-                          {decoded.trailingData.containerEndOffset.toLocaleString()}{" "}
+                    <div className="rounded-xl border border-clay bg-white px-4 py-3 text-sm text-ink/80">
+                      <p className="leading-6">
+                        <span className="inline-block w-44 font-medium text-ink">
+                          File Size:
+                        </span>
+                        <span className="font-mono text-ink">
+                          {formatByteCountWithHuman(decoded.byteSize)}
+                        </span>
+                      </p>
+                      <p className="leading-6">
+                        <span className="inline-block w-44 font-medium text-ink">
+                          EOF Offset:
+                        </span>
+                        <span className="font-mono text-ink">
+                          {formatCommaGroupedInteger(
+                            decoded.trailingData.containerEndOffset,
+                          )}{" "}
                           (0x
                           {decoded.trailingData.containerEndOffset
                             .toString(16)
@@ -1531,38 +1547,34 @@ function App() {
                           )
                         </span>
                       </p>
-                      <p className="md:text-right">
-                        Trailing bytes:{" "}
-                        <span className="font-medium text-ink">
-                          {trailingDataView?.byteLength.toLocaleString() ?? "0"}{" "}
-                          ({formatBytes(trailingDataView?.byteLength ?? 0)})
+                      <p className="leading-6">
+                        <span className="inline-block w-44 font-medium text-ink">
+                          Trailing Bytes:
+                        </span>
+                        <span className="font-mono text-ink">
+                          {formatByteCountWithHuman(
+                            trailingDataView?.byteLength ?? 0,
+                          )}
                         </span>
                       </p>
-                      {skipLeadingNullBytes &&
-                      trailingDataView &&
-                      trailingDataView.skippedLeadingNullBytes > 0 ? (
-                        <p>
-                          Skipped null prefix:{" "}
-                          <span className="font-medium text-ink">
-                            {trailingDataView.skippedLeadingNullBytes.toLocaleString()}{" "}
-                            bytes
-                          </span>
-                        </p>
-                      ) : (
-                        <p />
-                      )}
-                      <p>
-                        File size:{" "}
-                        <span className="font-medium text-ink">
-                          {decoded.byteSize.toLocaleString()} bytes
+                      <p className="leading-6">
+                        <span className="inline-block w-44 font-medium text-ink">
+                          Range:
                         </span>
-                      </p>
-                      <p className="md:text-right">
-                        Range:{" "}
-                        <span className="font-mono text-xs text-ink">
+                        <span className="font-mono text-ink">
                           {trailingDataView && trailingDataView.byteLength > 0
-                            ? `${trailingDataView.startOffset.toLocaleString()} - ${(decoded.byteSize - 1).toLocaleString()}`
+                            ? `${formatCommaGroupedInteger(trailingDataView.startOffset)} - ${formatCommaGroupedInteger(decoded.byteSize - 1)}`
                             : "None"}
+                        </span>
+                      </p>
+                      <p className="leading-6">
+                        <span className="inline-block w-44 font-medium text-ink">
+                          Skipped Null Prefix:
+                        </span>
+                        <span className="font-mono text-ink">
+                          {formatByteCountWithHuman(
+                            trailingDataView?.skippedLeadingNullBytes ?? 0,
+                          )}
                         </span>
                       </p>
                     </div>

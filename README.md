@@ -71,3 +71,4 @@ npm run test
 - Hex extraction concatenates selected plane bits in configured order, then repacks into bytes.
 - Payload carving inspects scanned extracted/trailing bytes for common file signatures and uses format-aware end detection when available.
 - Hex dump is presented as offset + hex + ASCII, with large dumps truncated for UI performance.
+- Trailing Data summary metrics are shown as compact text lines with monospaced `N bytes (human)` values.

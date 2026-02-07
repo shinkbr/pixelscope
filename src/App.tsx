@@ -47,11 +47,23 @@ const BYTE_PACK_OPTIONS: Array<{ value: ExtractionBytePackOrder; label: string }
   { value: "lsb-first", label: "Byte LSB first" },
 ];
 
-type AnalyzerTab = "bit-planes" | "exif" | "trailing-data";
+type AnalyzerTab = "view" | "bit-planes" | "exif" | "trailing-data";
+type ViewMode = "original" | "xor" | "high-contrast" | "grayscale" | "red-channel" | "green-channel" | "blue-channel";
+
+const VIEW_MODE_OPTIONS: Array<{ value: ViewMode; label: string }> = [
+  { value: "original", label: "Original" },
+  { value: "xor", label: "XOR (invert all bits)" },
+  { value: "high-contrast", label: "High contrast" },
+  { value: "grayscale", label: "Grayscale" },
+  { value: "red-channel", label: "Red channel focus" },
+  { value: "green-channel", label: "Green channel focus" },
+  { value: "blue-channel", label: "Blue channel focus" },
+];
 
 const ANALYZER_TABS: Array<{ id: AnalyzerTab; label: string }> = [
-  { id: "bit-planes", label: "Bit-Plane Navigator" },
+  { id: "view", label: "View" },
   { id: "exif", label: "Exif" },
+  { id: "bit-planes", label: "Bit-Plane" },
   { id: "trailing-data", label: "Trailing data" },
 ];
 
@@ -87,6 +99,72 @@ function buildTrailingDataDownloadName(sourceFileName: string): string {
   return `${baseName}_trailing.bin`;
 }
 
+function transformViewImageData(imageData: ImageData, mode: ViewMode): ImageData {
+  if (mode === "original") {
+    return new ImageData(new Uint8ClampedArray(imageData.data), imageData.width, imageData.height);
+  }
+
+  const source = imageData.data;
+  const output = new Uint8ClampedArray(source.length);
+
+  for (let index = 0; index < source.length; index += 4) {
+    const red = source[index];
+    const green = source[index + 1];
+    const blue = source[index + 2];
+    const alpha = source[index + 3];
+
+    if (mode === "xor") {
+      output[index] = 255 - red;
+      output[index + 1] = 255 - green;
+      output[index + 2] = 255 - blue;
+      output[index + 3] = alpha;
+      continue;
+    }
+
+    if (mode === "high-contrast") {
+      const luminance = red * 0.299 + green * 0.587 + blue * 0.114;
+      const value = luminance >= 128 ? 255 : 0;
+      output[index] = value;
+      output[index + 1] = value;
+      output[index + 2] = value;
+      output[index + 3] = alpha;
+      continue;
+    }
+
+    if (mode === "grayscale") {
+      const value = Math.round(red * 0.299 + green * 0.587 + blue * 0.114);
+      output[index] = value;
+      output[index + 1] = value;
+      output[index + 2] = value;
+      output[index + 3] = alpha;
+      continue;
+    }
+
+    if (mode === "red-channel") {
+      output[index] = red;
+      output[index + 1] = 0;
+      output[index + 2] = 0;
+      output[index + 3] = alpha;
+      continue;
+    }
+
+    if (mode === "green-channel") {
+      output[index] = 0;
+      output[index + 1] = green;
+      output[index + 2] = 0;
+      output[index + 3] = alpha;
+      continue;
+    }
+
+    output[index] = 0;
+    output[index + 1] = 0;
+    output[index + 2] = blue;
+    output[index + 3] = alpha;
+  }
+
+  return new ImageData(output, imageData.width, imageData.height);
+}
+
 function App() {
   const [decoded, setDecoded] = useState<DecodedImage | null>(null);
   const [selectedPlaneIds, setSelectedPlaneIds] = useState<string[]>([PLANE_SPECS[0].id]);
@@ -95,10 +173,12 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<AnalyzerTab>("bit-planes");
+  const [activeTab, setActiveTab] = useState<AnalyzerTab>("view");
   const [skipLeadingNullBytes, setSkipLeadingNullBytes] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("original");
 
   const planeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const viewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const planeStripRef = useRef<HTMLDivElement | null>(null);
 
   const selectedPlaneSet = useMemo(() => new Set(selectedPlaneIds), [selectedPlaneIds]);
@@ -191,7 +271,8 @@ function App() {
     setDecoded(null);
     setSelectedPlaneIds([PLANE_SPECS[0].id]);
     setActivePlaneId(PLANE_SPECS[0].id);
-    setActiveTab("bit-planes");
+    setActiveTab("view");
+    setViewMode("original");
     setError(null);
   }, []);
 
@@ -205,14 +286,16 @@ function App() {
         setDecoded(result);
         setSelectedPlaneIds([PLANE_SPECS[0].id]);
         setActivePlaneId(PLANE_SPECS[0].id);
-        setActiveTab("bit-planes");
+        setActiveTab("view");
+        setViewMode("original");
       } catch (loadError) {
         const message = loadError instanceof Error ? loadError.message : "Unable to process this image.";
         setError(message);
         setDecoded(null);
         setSelectedPlaneIds([PLANE_SPECS[0].id]);
         setActivePlaneId(PLANE_SPECS[0].id);
-        setActiveTab("bit-planes");
+        setActiveTab("view");
+        setViewMode("original");
       } finally {
         setIsLoading(false);
       }
@@ -319,6 +402,39 @@ function App() {
     }
   }, [decoded, trailingDataView]);
 
+  const cycleViewMode = useCallback((step: 1 | -1) => {
+    setViewMode((current) => {
+      const currentIndex = VIEW_MODE_OPTIONS.findIndex((option) => option.value === current);
+      if (currentIndex < 0) {
+        return VIEW_MODE_OPTIONS[0].value;
+      }
+      const nextIndex = (currentIndex + step + VIEW_MODE_OPTIONS.length) % VIEW_MODE_OPTIONS.length;
+      return VIEW_MODE_OPTIONS[nextIndex].value;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!viewCanvasRef.current) {
+      return;
+    }
+
+    const canvas = viewCanvasRef.current;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      return;
+    }
+
+    if (!decoded) {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+
+    const transformedImageData = transformViewImageData(decoded.imageData, viewMode);
+    canvas.width = transformedImageData.width;
+    canvas.height = transformedImageData.height;
+    context.putImageData(transformedImageData, 0, 0);
+  }, [activeTab, decoded, viewMode]);
+
   useEffect(() => {
     if (!planeCanvasRef.current) {
       return;
@@ -343,7 +459,7 @@ function App() {
     canvas.width = planeImageData.width;
     canvas.height = planeImageData.height;
     context.putImageData(planeImageData, 0, 0);
-  }, [decoded, selectedPlanes]);
+  }, [activeTab, decoded, selectedPlanes]);
 
   useEffect(() => {
     if (!planeStripRef.current) {
@@ -355,17 +471,18 @@ function App() {
   }, [activePlaneId]);
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 px-4 py-8 md:px-8">
-      <header className="animate-fadeInUp rounded-2xl border border-clay/80 bg-paper/80 p-6 shadow-panel backdrop-blur">
-        <p className="mb-2 font-mono text-xs uppercase tracking-[0.2em] text-accent">Steganography Toolkit</p>
-        <h1 className="text-3xl font-semibold leading-tight text-ink md:text-4xl">Bit-Plane Image Analyzer</h1>
-        <p className="mt-3 max-w-3xl text-sm text-ink/80 md:text-base">
-          Upload a PNG or JPEG file, then inspect every RGB(A) bit-plane. Plane numbering is <strong>LSB-first</strong>{" "}
-          ({`1 = least-significant bit, 8 = most-significant bit`}).
-        </p>
+    <div className="min-h-screen">
+      <header className="border-b border-clay/80 bg-transparent py-2">
+        <div className="mx-auto w-full max-w-7xl px-4 md:px-8">
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-semibold leading-tight text-ink md:text-xl">PixelScope</h1>
+            <span className="text-sm text-ink/70 md:text-base">Steganography Toolkit</span>
+          </div>
+        </div>
       </header>
 
-      <section className="grid gap-5 md:grid-cols-[1.1fr_1fr]">
+      <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-8 md:px-8">
+        <section className="grid gap-5 md:grid-cols-[1.1fr_1fr]">
         <label
           className={`group relative flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed bg-white/90 p-6 text-center shadow-panel transition ${
             isDragging ? "border-accent bg-accentSoft/40" : "border-clay hover:border-accent/70"
@@ -464,7 +581,65 @@ function App() {
         </div>
 
         <div className="p-4 md:p-5">
-          {activeTab === "bit-planes" ? (
+          {activeTab === "view" ? (
+            <section className="rounded-2xl border border-clay bg-white/95 p-5 shadow-panel">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-ink">View</h2>
+                  <p className="text-xs text-ink/70">
+                    Switch between visual modes to surface hidden patterns in the image.
+                  </p>
+                </div>
+                <label className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.08em] text-ink/65">
+                  <span>Mode</span>
+                  <select
+                    value={viewMode}
+                    onChange={(event) => setViewMode(event.target.value as ViewMode)}
+                    disabled={!decoded}
+                    className="rounded-md border border-clay bg-white px-2 py-1 text-[11px] normal-case tracking-normal text-ink disabled:opacity-50"
+                  >
+                    {VIEW_MODE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg border border-clay px-3 py-2 text-sm font-medium text-ink transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-45"
+                    onClick={() => cycleViewMode(-1)}
+                    disabled={!decoded}
+                  >
+                    Prev
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-clay px-3 py-2 text-sm font-medium text-ink transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-45"
+                    onClick={() => cycleViewMode(1)}
+                    disabled={!decoded}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-auto rounded-xl border border-clay bg-white p-2">
+                {decoded ? (
+                  <canvas
+                    ref={viewCanvasRef}
+                    className="pixelated block h-auto w-full max-w-full rounded-md bg-black/5"
+                    aria-label={`Image view mode: ${VIEW_MODE_OPTIONS.find((option) => option.value === viewMode)?.label ?? "Original"}`}
+                  />
+                ) : (
+                  <div className="grid h-48 place-items-center text-sm text-ink/60">
+                    Upload an image to inspect view modes.
+                  </div>
+                )}
+              </div>
+            </section>
+          ) : activeTab === "bit-planes" ? (
             <div className="space-y-5">
               <section className="rounded-2xl border border-clay bg-white/95 p-5 shadow-panel">
                 <div className="mb-4 flex items-center justify-between gap-3">
@@ -568,7 +743,7 @@ function App() {
                     {decoded ? (
                       <canvas
                         ref={planeCanvasRef}
-                        className="pixelated block rounded-md bg-black/5"
+                        className="pixelated block h-auto w-full max-w-full rounded-md bg-black/5"
                         aria-label={
                           selectedPlanes.length > 1
                             ? "Visualized combined bit planes"
@@ -856,8 +1031,9 @@ function App() {
             </section>
           )}
         </div>
-      </section>
-    </main>
+        </section>
+      </main>
+    </div>
   );
 }
 
